@@ -35,7 +35,23 @@ def create_app(settings: Settings | None = None, assistant: Assistant | None = N
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "manuali": len(assistant.knowledge.passages)}
+        """Stato del servizio: solo sì/no, nessun segreto."""
+        s = settings
+        return {
+            "status": "ok",
+            "manuali": len(assistant.knowledge.passages),
+            "config": {
+                "claude": bool(s.anthropic_api_key),
+                "url_pubblico": s.public_base_url or None,
+                "twilio": bool(s.twilio_account_sid and s.twilio_auth_token),
+                "whatsapp": assistant.messenger is not None,
+                "whatsapp_mittente_ok": s.twilio_whatsapp_from.removeprefix("whatsapp:").startswith("+"),
+                "ticket_jira": assistant.tickets is not None,
+                "operatore": bool(s.human_support_number),
+                "fatti_chiamare": bool(s.callback_enabled and s.twilio_voice_from),
+                "codice_accesso": bool(s.callback_password),
+            },
+        }
 
     return app
 

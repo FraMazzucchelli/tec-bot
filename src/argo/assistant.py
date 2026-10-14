@@ -268,7 +268,8 @@ class Assistant:
     def _send_manual(self, topic: str, session_id: str) -> str:
         phone = self._phones.get(session_id, "")
         if self.messenger is None:
-            return "Errore: l'invio WhatsApp non è configurato."
+            log.warning("WhatsApp non configurato: servono TWILIO_ACCOUNT_SID e TWILIO_WHATSAPP_FROM")
+            return "Errore: l'invio WhatsApp non è configurato sul server."
         if not phone or phone.startswith("client:") or phone.lower() in {"anonymous", "+266696687"}:
             return "Errore: il numero del chiamante non è disponibile (chiamata anonima)."
         hits = self.knowledge.search(topic, limit=1)
