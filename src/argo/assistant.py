@@ -33,6 +33,9 @@ Come lavori:
 - Non inventare procedure, codici o valori che non trovi nei manuali.
 - Per interventi pericolosi (tensione di rete, lavori in quota) ricorda le norme
   di sicurezza e, nel dubbio, suggerisci di sentire un referente.
+- Se il tecnico chiede di parlare con una persona, se la situazione è urgente o
+  pericolosa, o se non riuscite a risolvere e il tecnico non vuole un ticket, usa
+  `passa_a_operatore`. Dopo averlo usato, saluta con una frase breve.
 - Rispondi in italiano, in modo pratico e diretto, come un collega esperto.
 """
 
@@ -78,6 +81,20 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["titolo", "descrizione"],
         },
     },
+    {
+        "name": "passa_a_operatore",
+        "description": (
+            "Passa il tecnico a un operatore umano dell'assistenza: al telefono trasferisce "
+            "la chiamata, in chat fornisce il numero da chiamare."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "motivo": {"type": "string", "description": "Perché serve l'operatore"}
+            },
+            "required": ["motivo"],
+        },
+    },
 ]
 
 
@@ -88,22 +105,35 @@ class Assistant:
         model: str,
         knowledge: KnowledgeBase,
         tickets: TicketService | None,
+        human_support_number: str = "",
     ):
         self.client = client
         self.model = model
         self.knowledge = knowledge
         self.tickets = tickets
+        self.human_support_number = human_support_number
         self._history: dict[str, list[dict[str, Any]]] = {}
+        self._handoffs: set[str] = set()
 
     @classmethod
     def from_settings(cls, settings, knowledge: KnowledgeBase, tickets: TicketService | None):
         import anthropic
 
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
-        return cls(client, settings.claude_model, knowledge, tickets)
+        return cls(
+            client, settings.claude_model, knowledge, tickets, settings.human_support_number
+        )
 
     def reset(self, session_id: str) -> None:
         self._history.pop(session_id, None)
+        self._handoffs.discard(session_id)
+
+    def take_handoff(self, session_id: str) -> bool:
+        """True se in questo turno è stato chiesto il trasferimento a un operatore."""
+        if session_id in self._handoffs:
+            self._handoffs.discard(session_id)
+            return True
+        return False
 
     def reply(self, session_id: str, text: str, channel: str) -> str:
         messages = self._history.setdefault(session_id, [])
@@ -129,7 +159,7 @@ class Assistant:
                 {
                     "type": "tool_result",
                     "tool_use_id": block.id,
-                    "content": self._run_tool(block.name, block.input, session_id),
+                    "content": self._run_tool(block.name, block.input, session_id, channel),
                 }
                 for block in response.content
                 if block.type == "tool_use"
@@ -139,7 +169,7 @@ class Assistant:
         self._trim(session_id)
         return "Non riesco a completare la richiesta. Vuoi che apra un ticket per un collega?"
 
-    def _run_tool(self, name: str, args: dict[str, Any], session_id: str) -> str:
+    def _run_tool(self, name: str, args: dict[str, Any], session_id: str, channel: str) -> str:
         try:
             if name == "cerca_manuali":
                 hits = self.knowledge.search(args.get("query", ""))
@@ -153,6 +183,17 @@ class Assistant:
                     return "Errore: il sistema ticket non è configurato."
                 ticket = self.tickets.create(args["titolo"], args["descrizione"], session_id)
                 return f"Ticket aperto: {ticket.key} ({ticket.url})"
+            if name == "passa_a_operatore":
+                log.info("Richiesto operatore per %s: %s", session_id, args.get("motivo", ""))
+                if not self.human_support_number:
+                    return "Nessun operatore configurato: proponi invece di aprire un ticket."
+                if channel == "voce":
+                    self._handoffs.add(session_id)
+                    return (
+                        "Trasferimento predisposto: appena finisci di parlare la chiamata passa "
+                        "all'operatore. Di' solo una frase breve, es. 'Ti passo un collega'."
+                    )
+                return f"Comunica al tecnico di chiamare l'assistenza al numero {self.human_support_number}."
             return f"Strumento sconosciuto: {name}"
         except Exception as exc:  # l'errore torna a Claude, che lo spiega al tecnico
             log.exception("Errore nello strumento %s", name)

@@ -49,6 +49,19 @@ o scrivono al bot. Il repo contiene un `Dockerfile` pronto.
 Evita i piani che "addormentano" il server quando è inattivo: Twilio aspetta circa
 15 secondi e una chiamata durante il risveglio fallisce.
 
+## Operatore umano
+
+Se il tecnico chiede di parlare con una persona, o la situazione è urgente, ARGO usa
+lo strumento `passa_a_operatore`:
+- **al telefono** dice "Ti passo un collega" e trasferisce la chiamata (`<Dial>`);
+  se l'operatore non risponde entro 25 secondi avvisa e chiude;
+- **in chat** comunica il numero da chiamare.
+
+Il numero si imposta con `HUMAN_SUPPORT_NUMBER` in formato internazionale (`+39...`),
+**solo nelle variabili del server**: il repo è pubblico. Su Twilio abilita le chiamate
+in uscita verso l'Italia in *Voice → Settings → Geo permissions*; con l'account di
+prova il numero dell'operatore deve essere tra i *Verified Caller IDs*.
+
 ## Collegare i canali
 
 | Canale | Dove si configura | Webhook |

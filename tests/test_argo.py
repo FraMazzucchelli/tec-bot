@@ -184,6 +184,76 @@ def test_telegram_token_corretto_accettato():
     assert r.status_code == 200
 
 
+OPERATORE = "+390000000000"  # numero finto per i test
+
+
+def test_operatore_in_chat_restituisce_numero():
+    claude = FakeClaude([
+        ([tool_block("passa_a_operatore", {"motivo": "chiede una persona"})], "tool_use"),
+        ([text_block("Chiama il collega.")], "end_turn"),
+    ])
+    assistant = Assistant(claude, "m", kb(), None, OPERATORE)
+    assistant.reply("telegram:1", "voglio parlare con una persona", "telegram")
+    risultato = claude.calls[1]["messages"][-2]["content"][0]["content"]
+    assert OPERATORE in risultato
+    assert assistant.take_handoff("telegram:1") is False
+
+
+def test_operatore_non_configurato():
+    claude = FakeClaude([
+        ([tool_block("passa_a_operatore", {"motivo": "x"})], "tool_use"),
+        ([text_block("Apro un ticket?")], "end_turn"),
+    ])
+    Assistant(claude, "m", kb(), None, "").reply("s", "persona", "voce")
+    assert "Nessun operatore" in claude.calls[1]["messages"][-2]["content"][0]["content"]
+
+
+def make_voice_client(responses, numero=OPERATORE):
+    claude = FakeClaude(responses)
+    assistant = Assistant(claude, "m", kb(), None, numero)
+    settings = Settings(
+        twilio_auth_token=TWILIO_TOKEN,
+        public_base_url=PUBLIC_URL,
+        human_support_number=numero,
+    )
+    return TestClient(create_app(settings, assistant))
+
+
+def test_voce_trasferisce_all_operatore():
+    client = make_voice_client([
+        ([tool_block("passa_a_operatore", {"motivo": "urgente"})], "tool_use"),
+        ([text_block("Ti passo un collega.")], "end_turn"),
+    ])
+    r = post_twilio(client, "/voice/respond", {"CallSid": "CA9", "SpeechResult": "operatore"})
+    assert f">{OPERATORE}</Dial>" in r.text
+    assert "Ti passo un collega." in r.text
+    assert "<Gather" not in r.text
+
+
+def test_voce_errore_claude_trasferisce():
+    class Rotto:
+        messages = None
+
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **kwargs):
+            raise RuntimeError("API giù")
+
+    assistant = Assistant(Rotto(), "m", kb(), None, OPERATORE)
+    settings = Settings(twilio_auth_token=TWILIO_TOKEN, public_base_url=PUBLIC_URL,
+                        human_support_number=OPERATORE)
+    client = TestClient(create_app(settings, assistant))
+    r = post_twilio(client, "/voice/respond", {"CallSid": "CA1", "SpeechResult": "aiuto"})
+    assert "<Dial" in r.text
+
+
+def test_dial_status():
+    client = make_voice_client([])
+    assert "<Say" not in post_twilio(client, "/voice/dial-status", {"DialCallStatus": "completed"}).text
+    assert "non è raggiungibile" in post_twilio(client, "/voice/dial-status", {"DialCallStatus": "no-answer"}).text
+
+
 def test_health():
     client, _ = make_client([])
     assert client.get("/health").json()["status"] == "ok"

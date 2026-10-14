@@ -62,9 +62,37 @@ def respond(
         assistant.reset(f"voce:{CallSid}")
         return _twiml(_say(request, "Buon lavoro, ciao!") + "<Hangup/>")
 
+    session = f"voce:{CallSid}"
     try:
-        answer = assistant.reply(f"voce:{CallSid}", f"[chiamata da {From}] {text}", "voce")
+        answer = assistant.reply(session, f"[chiamata da {From}] {text}", "voce")
     except Exception:
         log.exception("Errore durante la risposta vocale")
-        answer = "Scusa, ho un problema tecnico in questo momento. Riprova tra poco."
+        answer = "Scusa, ho un problema tecnico in questo momento."
+        if request.app.state.settings.human_support_number:
+            return _transfer(request, answer + " Ti passo un collega.")
+        return _say_and_listen(request, answer + " Riprova tra poco.")
+
+    if assistant.take_handoff(session):
+        assistant.reset(session)
+        return _transfer(request, answer or "Ti passo un collega, resta in linea.")
     return _say_and_listen(request, answer)
+
+
+def _transfer(request: Request, text: str) -> Response:
+    """Dice la frase e trasferisce la chiamata all'operatore umano."""
+    number = escape(request.app.state.settings.human_support_number)
+    return _twiml(
+        _say(request, text)
+        + f'<Dial timeout="25" action="/voice/dial-status" method="POST">{number}</Dial>'
+    )
+
+
+@router.post("/dial-status")
+def dial_status(request: Request, DialCallStatus: str = Form("")) -> Response:
+    """Twilio chiama questo endpoint quando il trasferimento finisce."""
+    if DialCallStatus == "completed":
+        return _twiml("<Hangup/>")
+    return _twiml(
+        _say(request, "Il collega non è raggiungibile. Riprova più tardi oppure chiedimi di aprire un ticket. Ciao.")
+        + "<Hangup/>"
+    )
