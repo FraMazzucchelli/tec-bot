@@ -104,7 +104,7 @@ Metti i manuali nella cartella `manuals/` (anche in sottocartelle):
   procedure interne e FAQ scritte da voi.
 
 Poi `git add manuals && git commit && git push`: Railway rifà il deploy e all'avvio il log
-riporta quante sezioni ha caricato. `manuals/esempio-centrale.md` è solo un esempio.
+riporta quante sezioni ha caricato. I manuali di prova usati dai test automatici sono in `tests/fixtures/manuals/`.
 
 **Attenzione:** se il repo è pubblico, i manuali sono visibili a chiunque. Per
 documentazione interna o manuali dei produttori rendi il repo privato

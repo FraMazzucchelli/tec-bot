@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -42,7 +43,8 @@ class FakeTickets:
 
 
 def kb():
-    return KnowledgeBase.from_dir("manuals")
+    # manuali di prova (inventati), separati da quelli veri in manuals/
+    return KnowledgeBase.from_dir(Path(__file__).parent / "fixtures" / "manuals")
 
 
 def test_ricerca_manuali_trova_la_sezione_giusta():

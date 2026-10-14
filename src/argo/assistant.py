@@ -126,7 +126,7 @@ TOOLS: list[dict[str, Any]] = [
             "properties": {
                 "argomento": {
                     "type": "string",
-                    "description": "Argomento preciso, es. 'MicoGuard sostituzione cartuccia diffusore'",
+                    "description": "Argomento preciso con modello, es. 'nebbiogeno DT-800 capacità serbatoio'",
                 }
             },
             "required": ["argomento"],

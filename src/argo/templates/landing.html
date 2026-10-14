@@ -131,12 +131,10 @@
   .wires p { margin: 0; color: var(--muted); }
   .c-green { background: var(--green); } .c-yellow { background: var(--yellow); }
   .c-red { background: var(--red); } .c-black { background: var(--graphite); }
-  .wires-note { margin-top: 40px; font-size: .95rem; color: var(--muted); }
 
   /* Sistema di prova */
   .demo { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: start; }
   .demo p { max-width: 36em; }
-  .fake { display: inline-block; font-weight: 700; color: var(--red); }
   .asks { list-style: none; padding: 0; margin: 0; border-left: 4px solid var(--yellow); }
   .asks li { padding: 12px 0 12px 20px; font-size: 1.12rem; border-bottom: 1px solid var(--line); }
   .asks li:last-child { border-bottom: 0; }
@@ -207,16 +205,16 @@
           <span class="live">in chiamata 00:47</span>
         </div>
         <div class="turn tech t1"><span class="who">Tecnico</span>
-          <p>Sono sulla scala alla villa Bertolini, la centrale MicoGuard dà errore E21.</p></div>
+          <p>Ho appena acceso un nebbiogeno DT-800 da un cliente: quanto ci mette a essere pronto?</p></div>
         <div class="turn argo t2"><span class="who">ARGO</span>
-          <p>E21 significa che il locale della centrale supera i 40 gradi. Apri o ventila il locale e l'errore rientra.
-          <span class="src">Manuale MG-420, codici errore</span></p></div>
+          <p>Partendo da freddo, al massimo 12 minuti. Il DT-400 invece può arrivare a 25.
+          <span class="src">Scheda tecnica Serie LAN</span></p></div>
         <div class="turn tech t3"><span class="who">Tecnico</span>
-          <p>Ok. Già che ci sono, come cambio la cartuccia del diffusore?</p></div>
+          <p>E il serbatoio quanto tiene?</p></div>
         <div class="turn argo t4"><span class="who">ARGO</span>
-          <p>Sono sei passaggi: te li mando su WhatsApp, così li segui con le mani libere.</p></div>
+          <p>Un litro e mezzo, rabboccabile. Ti mando la scheda su WhatsApp, così hai tutti i dati sotto mano.</p></div>
         <div class="wa t5"><span class="who">WhatsApp</span>
-          <p>📘 3.4 Inserimento della cartuccia Spora Placida SP-1<br>1. Togliere tensione al diffusore dal menu tecnico…</p></div>
+          <p>📘 Scheda tecnica nebbiogeni Serie LAN<br>Capacità serbatoio: 0,5 Lt | 1,5 Lt | 3 Lt…</p></div>
       </div>
     </div>
 
@@ -238,26 +236,24 @@
           <h3>Ti passa un collega</h3>
           <p>Se chiedi una persona, o la situazione è urgente, trasferisce la chiamata al supporto.</p></li>
       </ul>
-      <p class="wires-note">Quattro colori come i fili di un diffusore: verde stato, giallo comando, rosso alimentazione, nero massa.</p>
     </section>
 
     <section class="block" aria-labelledby="demo">
       <div class="demo">
         <div>
-          <h2 id="demo">Il sistema di prova: MicoGuard MG-420</h2>
-          <p><span class="fake">È un antifurto di fantasia.</span> Lo abbiamo inventato per mettere alla prova ARGO
-          con un manuale vero e proprio, codici errore compresi.</p>
-          <p>Invece di far suonare la sirena, quando due sensori confermano l'intrusione i diffusori a soffitto
-          nebulizzano le cartucce Spora Placida: il ladro entra in uno stato di serenità contemplativa e perde
-          ogni interesse per la refurtiva. Ha una centrale a 8 zone, cartucce da sostituire ogni tre attivazioni
-          e una sirena opzionale che suona flauti e pioggia.</p>
+          <h2 id="demo">Cosa conosce oggi: i nebbiogeni Serie LAN</h2>
+          <p>Per questa prova ARGO ha studiato la scheda tecnica dei nebbiogeni Serie LAN, gestibili da remoto
+          via Ethernet: i modelli EX-50.L, EX-100.L, EX-200.L e DT-400.L, DT-800.L, DT-1600.L.</p>
+          <p>Conosce copertura, tempi di erogazione e di riscaldamento, serbatoio, alimentazione, batteria
+          tampone, ingressi e uscite. Quando un valore cambia da un modello all'altro, ti chiede su quale
+          stai lavorando. Più manuali gli diamo, più domande sa coprire.</p>
         </div>
         <div>
           <p><strong>Fingiti un tecnico al lavoro e chiedi, ad esempio:</strong></p>
           <ul class="asks">
-            <li>"La centrale MicoGuard mi dà errore E21, che faccio?"</li>
-            <li>"Come si sostituisce la cartuccia del diffusore?"</li>
-            <li>"Mandami la procedura su WhatsApp."</li>
+            <li>"Quanto ci mette a scaldarsi un DT-800 da freddo?"</li>
+            <li>"Che capacità ha il serbatoio dell'EX-200?"</li>
+            <li>"Mandami la scheda su WhatsApp."</li>
             <li>"Voglio parlare con un collega."</li>
           </ul>
         </div>
