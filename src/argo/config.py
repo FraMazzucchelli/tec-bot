@@ -67,6 +67,19 @@ class Settings(BaseSettings):
     def spoken_name(self) -> str:
         return self.assistant_spoken_name or self.display_name
 
+    @field_validator("jira_base_url")
+    @classmethod
+    def _jira_site_only(cls, value: str) -> str:
+        """Tiene solo https://sito.atlassian.net, anche se è stato incollato l'indirizzo
+        completo di una pagina Jira (es. .../jira/software/projects/SCRUM/boards/1)."""
+        value = value.strip()
+        if not value:
+            return value
+        if not value.startswith(("http://", "https://")):
+            value = "https://" + value
+        scheme, _, rest = value.partition("://")
+        return f"{scheme}://{rest.split('/')[0]}"
+
     @field_validator("public_base_url")
     @classmethod
     def _normalize_url(cls, value: str) -> str:
