@@ -97,8 +97,25 @@ Per prove in locale senza Twilio/Telegram puoi mettere `SKIP_SIGNATURE_CHECK=tru
 
 ## Manuali
 
-Metti i manuali in `manuals/` come file Markdown o testo. I titoli (`#`, `##`) diventano
-le sezioni che ARGO cita nelle risposte. `manuals/esempio-centrale.md` è solo un esempio.
+Metti i manuali nella cartella `manuals/` (anche in sottocartelle):
+- **PDF** con testo selezionabile: indicizzati pagina per pagina, ARGO cita "manuale, pag. N".
+  Le scansioni (solo immagini) vanno prima passate in un OCR.
+- **Markdown / testo**: i titoli (`#`, `##`) diventano le sezioni citate. Ottimi per
+  procedure interne e FAQ scritte da voi.
+
+Poi `git add manuals && git commit && git push`: Railway rifà il deploy e all'avvio il log
+riporta quante sezioni ha caricato. `manuals/esempio-centrale.md` è solo un esempio.
+
+**Attenzione:** se il repo è pubblico, i manuali sono visibili a chiunque. Per
+documentazione interna o manuali dei produttori rendi il repo privato
+(GitHub → *Settings → General → Danger Zone → Change visibility*).
+
+## Argomenti ammessi
+
+ARGO risponde solo su temi tecnici (impianti di sicurezza, interventi, ticket). Alle
+domande fuori tema risponde con una frase cortese e riporta il discorso sull'impianto;
+ignora anche i tentativi di fargli cambiare ruolo o ignorare le istruzioni. Il vincolo
+è nel prompt di sistema in `src/argo/assistant.py` (sezione "Argomenti ammessi").
 
 ## Prossimi passi
 

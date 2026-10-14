@@ -51,6 +51,23 @@ def test_ricerca_manuali_trova_la_sezione_giusta():
     assert "Batteria" in hits[0].passage.title
 
 
+def test_manuale_pdf(tmp_path):
+    import pytest
+
+    pytest.importorskip("reportlab")
+    from reportlab.pdfgen import canvas
+
+    c = canvas.Canvas(str(tmp_path / "centrale.pdf"))
+    c.drawString(72, 800, "Codice errore E07: guasto linea seriale")
+    c.showPage()
+    c.drawString(72, 800, "Sirena esterna: verificare il fusibile F2")
+    c.save()
+    (tmp_path / "rotto.pdf").write_bytes(b"non un pdf")
+
+    base = KnowledgeBase.from_dir(tmp_path)
+    assert base.search("fusibile sirena")[0].passage.title == "centrale, pag. 2"
+
+
 def test_ricerca_vuota_senza_risultati():
     assert KnowledgeBase([Passage("a", "b", "testo")]).search("zzz") == []
 

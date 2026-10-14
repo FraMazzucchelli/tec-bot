@@ -8,11 +8,14 @@ mantenendo la stessa interfaccia `search()`.
 
 from __future__ import annotations
 
+import logging
 import math
 import re
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 _WORD = re.compile(r"[a-zà-ù0-9]+", re.IGNORECASE)
 _STOPWORDS = {
@@ -56,8 +59,17 @@ class KnowledgeBase:
         root = Path(directory)
         if root.exists():
             for path in sorted(root.rglob("*")):
-                if path.suffix.lower() in {".md", ".txt"} and path.is_file():
-                    passages.extend(_split(path, root))
+                if not path.is_file():
+                    continue
+                suffix = path.suffix.lower()
+                try:
+                    if suffix in {".md", ".txt"}:
+                        passages.extend(_split(path, root))
+                    elif suffix == ".pdf":
+                        passages.extend(_split_pdf(path, root))
+                except Exception:
+                    log.exception("Manuale non leggibile, lo salto: %s", path)
+        log.info("Manuali caricati: %d sezioni da %s", len(passages), root)
         return cls(passages)
 
     def search(self, query: str, limit: int = 3) -> list[Hit]:
@@ -96,4 +108,37 @@ def _split(path: Path, root: Path) -> list[Passage]:
         else:
             buffer.append(line)
     flush()
+    return passages
+
+
+PDF_CHUNK_CHARS = 1200
+
+
+def _split_pdf(path: Path, root: Path) -> list[Passage]:
+    """Divide un PDF in blocchi di testo per pagina (il titolo indica la pagina).
+
+    Funziona solo con PDF che contengono testo: le scansioni (immagini) vanno
+    prima passate in un OCR.
+    """
+    from pypdf import PdfReader
+
+    source = str(path.relative_to(root))
+    passages: list[Passage] = []
+    for number, page in enumerate(PdfReader(path).pages, start=1):
+        title = f"{path.stem}, pag. {number}"
+        chunk: list[str] = []
+        size = 0
+        for line in (page.extract_text() or "").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            chunk.append(line)
+            size += len(line)
+            if size >= PDF_CHUNK_CHARS:
+                passages.append(Passage(source, title, "\n".join(chunk)))
+                chunk, size = [], 0
+        if chunk:
+            passages.append(Passage(source, title, "\n".join(chunk)))
+    if not passages:
+        log.warning("Nessun testo estratto da %s (forse è una scansione)", path)
     return passages
