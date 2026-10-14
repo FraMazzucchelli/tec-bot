@@ -102,6 +102,13 @@ def test_apertura_ticket():
     assert tickets.created[0][0] == "Sirena muta"
 
 
+def test_regole_confronti_nel_prompt():
+    claude = FakeClaude([([text_block("Ok.")], "end_turn")])
+    Assistant(claude, "m", kb(), None).reply("s", "differenza tra DT-400 e DT-800?", "voce")
+    system = claude.calls[0]["system"]
+    assert "Confronti tra modelli" in system and "Mai opinioni" in system
+
+
 def test_stile_voce_nel_prompt():
     claude = FakeClaude([([text_block("Ok.")], "end_turn")])
     Assistant(claude, "m", kb(), None).reply("s", "ciao", "voce")
