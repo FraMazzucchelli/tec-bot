@@ -263,8 +263,7 @@
     <section class="callme" id="chiamami" aria-labelledby="titolo-chiamami">
       <div>
         <h2 id="titolo-chiamami">Fatti chiamare da ARGO</h2>
-        <p class="intro">Inserisci il tuo cellulare e il codice di accesso che ti hanno dato: dopo pochi secondi
-        ARGO ti telefona.</p>
+        <p class="intro">{{INTRO_MODULO}}</p>
         <ul class="facts">
           <li>Ti chiama un numero americano (+1 681…): rispondi pure, per te è gratuita.</li>
           <li>La chiamata dura al massimo 5 minuti.</li>
@@ -278,10 +277,7 @@
                  placeholder="333 123 4567" value="{{NUMERO}}" required>
           <span class="hint">Solo numeri italiani.</span>
         </div>
-        <div class="field">
-          <label for="codice">Codice di accesso</label>
-          <input id="codice" name="codice" type="password" autocomplete="off" required>
-        </div>
+        {{CAMPO_CODICE}}
         <button class="button" type="submit">Chiamami</button>
         {{MESSAGGIO}}
       </form>

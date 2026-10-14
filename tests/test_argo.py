@@ -404,6 +404,20 @@ def test_chiamami_numero_extra_autorizzato(monkeypatch):
     assert r.status_code == 200 and chiamate[0][1]["To"] == "+447700900123"
 
 
+def test_chiamami_senza_codice(monkeypatch):
+    chiamate = fake_twilio(monkeypatch)
+    client = make_callback_client(callback_password="")
+    assert 'name="codice"' not in client.get("/").text
+    r = client.post("/chiamami", data={"numero": "333 123 4567"})
+    assert r.status_code == 200 and chiamate[0][1]["To"] == "+393331234567"
+
+
+def test_chiamami_disattivato(monkeypatch):
+    monkeypatch.setattr("httpx.post", lambda *a, **k: pytest_fail())
+    client = make_callback_client(callback_password="", callback_enabled=False)
+    assert client.post("/chiamami", data={"numero": "3331234567"}).status_code == 503
+
+
 def test_chiamami_senza_limiti_di_default(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
     client = make_callback_client()

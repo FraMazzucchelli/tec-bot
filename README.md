@@ -118,7 +118,7 @@ numero USA (per lui è una chiamata in arrivo, gratuita). Utile anche quando l'o
 telefonico blocca le chiamate verso gli USA. Il vecchio indirizzo `/chiamami` porta qui.
 
 Variabili: `TWILIO_VOICE_FROM` (il numero Twilio, es. `+16812562315`) e `CALLBACK_PASSWORD`
-(il codice di accesso da dare a chi deve provare). Protezioni:
+(codice di accesso; se vuota il modulo è aperto a tutti, `CALLBACK_ENABLED=false` lo disattiva). Protezioni:
 - solo cellulari italiani (`+39 3…`); altri numeri vanno elencati in `CALLBACK_NUMBERS`, separati da virgola;
 - una chiamata ogni `CALLBACK_COOLDOWN_SECONDS` secondi per numero e al massimo `CALLBACK_MAX_PER_HOUR` in totale. Di default sono a `0` = nessun limite (fase di test): prima di condividere il codice di accesso impostali, ad esempio 180 e 20;
 - ogni chiamata si chiude dopo 5 minuti.

@@ -34,7 +34,8 @@ class Settings(BaseSettings):
 
     # Pagina /chiamami: ARGO telefona a uno dei numeri autorizzati
     twilio_voice_from: str = ""  # il numero Twilio, es. +16812562315
-    callback_password: str = ""
+    callback_enabled: bool = True  # false = modulo "Fatti chiamare" disattivato
+    callback_password: str = ""  # vuota = nessun codice di accesso richiesto
     # numeri extra ammessi oltre ai cellulari italiani (es. esteri), separati da virgola
     callback_numbers: str = ""
     # Limiti delle chiamate di prova: 0 = nessun limite (fase di test).

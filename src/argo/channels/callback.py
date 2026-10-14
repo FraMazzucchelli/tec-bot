@@ -49,12 +49,31 @@ def _extra_numbers(settings) -> set[str]:
     return {normalize_number(n) for n in settings.callback_numbers.split(",") if n.strip()}
 
 
-def _render(numero: str = "", message: str = "", ok: bool = False, status: int = 200) -> HTMLResponse:
+CODE_FIELD = """<div class="field">
+          <label for="codice">Codice di accesso</label>
+          <input id="codice" name="codice" type="password" autocomplete="off" required>
+        </div>"""
+INTRO_WITH_CODE = (
+    "Inserisci il tuo cellulare e il codice di accesso che ti hanno dato: "
+    "dopo pochi secondi ARGO ti telefona."
+)
+INTRO_OPEN = "Inserisci il tuo cellulare: dopo pochi secondi ARGO ti telefona."
+
+
+def _render(
+    settings, numero: str = "", message: str = "", ok: bool = False, status: int = 200
+) -> HTMLResponse:
     box = ""
     if message:
         kind = "ok" if ok else "err"
         box = f'<div class="msg {kind}" role="status">{escape(message)}</div>'
-    html = TEMPLATE.replace("{{NUMERO}}", escape(numero, quote=True)).replace("{{MESSAGGIO}}", box)
+    needs_code = bool(settings.callback_password)
+    html = (
+        TEMPLATE.replace("{{NUMERO}}", escape(numero, quote=True))
+        .replace("{{MESSAGGIO}}", box)
+        .replace("{{CAMPO_CODICE}}", CODE_FIELD if needs_code else "")
+        .replace("{{INTRO_MODULO}}", INTRO_WITH_CODE if needs_code else INTRO_OPEN)
+    )
     return HTMLResponse(html, status_code=status)
 
 
@@ -89,8 +108,8 @@ def _limiter(request: Request) -> CallLimiter:
 
 
 @router.get("/", response_class=HTMLResponse)
-def landing() -> HTMLResponse:
-    return _render()
+def landing(request: Request) -> HTMLResponse:
+    return _render(request.app.state.settings)
 
 
 @router.get("/chiamami")
@@ -101,22 +120,23 @@ def old_link() -> RedirectResponse:
 @router.post("/chiamami")
 def callback_call(request: Request, numero: str = Form(""), codice: str = Form("")) -> HTMLResponse:
     s = request.app.state.settings
-    if not s.callback_password:
-        return _render(numero, "Le chiamate di prova non sono ancora attive.", status=503)
-    if not hmac.compare_digest(codice.encode(), s.callback_password.encode()):
+    if not s.callback_enabled:
+        return _render(s, numero, "Le chiamate di prova sono disattivate.", status=503)
+    # codice di accesso richiesto solo se CALLBACK_PASSWORD è impostata
+    if s.callback_password and not hmac.compare_digest(codice.encode(), s.callback_password.encode()):
         log.warning("Fatti chiamare: codice di accesso errato")
-        return _render(numero, "Il codice di accesso non è corretto.", status=403)
+        return _render(s, numero, "Il codice di accesso non è corretto.", status=403)
 
     number = normalize_number(numero)
     if not (ITALIAN_MOBILE.match(number) or number in _extra_numbers(s)):
-        return _render(numero, "Inserisci un cellulare italiano, ad esempio 333 123 4567.", status=400)
+        return _render(s, numero, "Inserisci un cellulare italiano, ad esempio 333 123 4567.", status=400)
 
     limiter = _limiter(request)
     if (problem := limiter.check(number)) is not None:
-        return _render(numero, problem, status=429)
+        return _render(s, numero, problem, status=429)
 
     if not (s.twilio_account_sid and s.twilio_auth_token and s.twilio_voice_from):
-        return _render(numero, "Le chiamate di prova non sono configurate sul server.", status=503)
+        return _render(s, numero, "Le chiamate di prova non sono configurate sul server.", status=503)
 
     try:
         response = httpx.post(
@@ -140,8 +160,8 @@ def callback_call(request: Request, numero: str = Form(""), codice: str = Form("
             except ValueError:
                 detail = exc.response.text[:200]
         log.error("Fatti chiamare: Twilio ha rifiutato la chiamata: %s", detail or exc)
-        return _render(numero, "La chiamata non è partita. Controlla il numero e riprova.", status=502)
+        return _render(s, numero, "La chiamata non è partita. Controlla il numero e riprova.", status=502)
 
     limiter.record(number)
     log.info("Fatti chiamare: chiamata avviata verso %s****", number[:-4])
-    return _render("", "Ti sto chiamando: rispondi tra qualche secondo.", ok=True)
+    return _render(s, "", "Ti sto chiamando: rispondi tra qualche secondo.", ok=True)
