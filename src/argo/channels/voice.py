@@ -43,7 +43,8 @@ def _say_and_listen(request: Request, text: str) -> Response:
 @router.post("/incoming")
 def incoming(request: Request) -> Response:
     return _say_and_listen(
-        request, "Ciao, sono ARGO, l'assistenza tecnica. Dimmi pure il problema."
+        request, "Ciao, sono ARGO, l'assistente automatico dell'assistenza tecnica. "
+        "Se vuoi parlare con un collega dimmelo in qualsiasi momento. Qual è il problema?"
     )
 
 
