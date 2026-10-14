@@ -107,6 +107,7 @@ def test_regole_confronti_nel_prompt():
     Assistant(claude, "m", kb(), None).reply("s", "differenza tra DT-400 e DT-800?", "voce")
     system = claude.calls[0]["system"]
     assert "Confronti tra modelli" in system and "Mai opinioni" in system
+    assert "richiesta di consiglio" in system
 
 
 def test_stile_voce_nel_prompt():
