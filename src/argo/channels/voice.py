@@ -53,9 +53,13 @@ def respond(
     request: Request,
     CallSid: str = Form(""),
     From: str = Form(""),
+    To: str = Form(""),
+    Direction: str = Form("inbound"),
     SpeechResult: str = Form(""),
 ) -> Response:
     assistant = request.app.state.assistant
+    # nelle chiamate partite da ARGO (pagina /chiamami) il tecnico è il destinatario
+    technician = To if Direction.startswith("outbound") else From
     text = SpeechResult.strip()
     if not text:
         return _say_and_listen(request, "Scusa, non ho capito. Puoi ripetere?")
@@ -65,7 +69,7 @@ def respond(
 
     session = f"voce:{CallSid}"
     try:
-        answer = assistant.reply(session, text, "voce", phone=From)
+        answer = assistant.reply(session, text, "voce", phone=technician)
     except Exception:
         log.exception("Errore durante la risposta vocale")
         answer = "Scusa, ho un problema tecnico in questo momento."

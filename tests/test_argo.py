@@ -312,6 +312,77 @@ def test_split_message():
     assert "".join(split_message("x" * 4000)) == "x" * 4000
 
 
+def make_callback_client(**extra):
+    settings = Settings(
+        twilio_auth_token=TWILIO_TOKEN,
+        twilio_account_sid="AC123",
+        twilio_voice_from="+15550001111",
+        public_base_url=PUBLIC_URL,
+        human_support_number=OPERATORE,
+        callback_password="segreta",
+        **extra,
+    )
+    return TestClient(create_app(settings, Assistant(FakeClaude([]), "m", kb(), None)))
+
+
+def test_chiamami_password_errata(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest_fail())
+    client = make_callback_client()
+    r = client.post("/chiamami", data={"numero": OPERATORE, "password": "no"})
+    assert "Password errata" in r.text
+
+
+def test_chiamami_numero_non_autorizzato(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest_fail())
+    client = make_callback_client()
+    r = client.post("/chiamami", data={"numero": "+391111111111", "password": "segreta"})
+    assert "non autorizzato" in r.text
+
+
+def test_chiamami_avvia_chiamata(monkeypatch):
+    import httpx
+
+    chiamate = []
+
+    def finto_post(url, data, auth, timeout):
+        chiamate.append((url, data))
+        return httpx.Response(201, json={"sid": "CA1"}, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx, "post", finto_post)
+    client = make_callback_client()
+    assert OPERATORE not in client.get("/chiamami").text  # numero mascherato nella pagina
+    r = client.post("/chiamami", data={"numero": OPERATORE, "password": "segreta"})
+    assert "Ti sto chiamando" in r.text
+    url, data = chiamate[0]
+    assert url.endswith("/Accounts/AC123/Calls.json")
+    assert data["To"] == OPERATORE and data["From"] == "+15550001111"
+    assert data["Url"] == PUBLIC_URL + "/voice/incoming"
+
+
+def test_chiamata_in_uscita_usa_il_destinatario():
+    messenger = FakeMessenger()
+    claude = FakeClaude([
+        ([tool_block("invia_manuale_whatsapp", {"argomento": "pulizia ugello"})], "tool_use"),
+        ([text_block("Inviata.")], "end_turn"),
+    ])
+    assistant = Assistant(claude, "m", kb(), None, "", messenger)
+    settings = Settings(twilio_auth_token=TWILIO_TOKEN, public_base_url=PUBLIC_URL)
+    client = TestClient(create_app(settings, assistant))
+    post_twilio(client, "/voice/respond", {
+        "CallSid": "CA7", "From": "+15550001111", "To": "+393330000000",
+        "Direction": "outbound-api", "SpeechResult": "mandamelo su whatsapp",
+    })
+    assert messenger.sent[0][0] == "+393330000000"
+
+
+def pytest_fail():
+    raise AssertionError("Twilio non doveva essere chiamato")
+
+
 def test_health():
     client, _ = make_client([])
     assert client.get("/health").json()["status"] == "ok"

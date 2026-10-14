@@ -5,7 +5,7 @@ import logging
 from fastapi import FastAPI
 
 from .assistant import Assistant
-from .channels import chat, voice
+from .channels import callback, chat, voice
 from .config import Settings, get_settings
 from .knowledge import KnowledgeBase
 from .messaging import TwilioWhatsApp
@@ -31,6 +31,7 @@ def create_app(settings: Settings | None = None, assistant: Assistant | None = N
     app.state.assistant = assistant
     app.include_router(voice.router)
     app.include_router(chat.router)
+    app.include_router(callback.router)
 
     @app.get("/health")
     def health() -> dict:
