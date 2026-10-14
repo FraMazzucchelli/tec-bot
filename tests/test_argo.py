@@ -6,6 +6,7 @@ from argo.assistant import Assistant
 from argo.config import Settings
 from argo.knowledge import KnowledgeBase, Passage
 from argo.main import create_app
+from argo.security import twilio_signature
 from argo.tickets import Ticket
 
 
@@ -88,30 +89,99 @@ def test_stile_voce_nel_prompt():
     assert "telefono" in claude.calls[0]["system"]
 
 
+TWILIO_TOKEN = "token-di-prova"
+PUBLIC_URL = "https://argo.example.com"
+
+
 def make_client(responses):
     claude = FakeClaude(responses)
     assistant = Assistant(claude, "m", kb(), None)
-    app = create_app(Settings(telegram_bot_token="x"), assistant)
-    return TestClient(app), claude
+    settings = Settings(
+        telegram_bot_token="x",
+        telegram_webhook_secret="segreto",
+        twilio_auth_token=TWILIO_TOKEN,
+        public_base_url=PUBLIC_URL,
+        skip_signature_check=False,
+    )
+    return TestClient(create_app(settings, assistant)), claude
+
+
+def post_twilio(client, path, data, signature=None):
+    """Simula Twilio: firma la richiesta come farebbe lui."""
+    sig = signature or twilio_signature(TWILIO_TOKEN, PUBLIC_URL + path, data.items())
+    return client.post(path, data=data, headers={"X-Twilio-Signature": sig})
+
+
+def test_firma_twilio_esempio_calcolato_a_mano():
+    import base64
+    import hashlib
+    import hmac
+
+    # payload costruito a mano: URL + parametri ordinati per nome, chiave+valore
+    payload = "https://x.it/voice/incoming" + "AccountSidAC1" + "CallSidCA1" + "From+39333"
+    atteso = base64.b64encode(hmac.new(b"tok", payload.encode(), hashlib.sha1).digest()).decode()
+    params = {"From": "+39333", "CallSid": "CA1", "AccountSid": "AC1"}.items()
+    assert twilio_signature("tok", "https://x.it/voice/incoming", params) == atteso
 
 
 def test_voce_chiamata_in_arrivo():
     client, _ = make_client([])
-    r = client.post("/voice/incoming", data={"CallSid": "CA1", "From": "+39333"})
+    r = post_twilio(client, "/voice/incoming", {"CallSid": "CA1", "From": "+39333"})
     assert r.status_code == 200
     assert "<Gather" in r.text and 'language="it-IT"' in r.text
 
 
+def test_voce_firma_errata_rifiutata():
+    client, claude = make_client([])
+    r = post_twilio(client, "/voice/respond", {"CallSid": "CA1", "SpeechResult": "x"}, signature="falsa")
+    assert r.status_code == 403
+    assert claude.calls == []
+
+
+def test_voce_senza_firma_rifiutata():
+    client, _ = make_client([])
+    assert client.post("/voice/incoming", data={"CallSid": "CA1"}).status_code == 403
+
+
+def test_voce_parametri_manomessi_rifiutati():
+    client, _ = make_client([])
+    sig = twilio_signature(TWILIO_TOKEN, PUBLIC_URL + "/voice/respond", {"SpeechResult": "a"}.items())
+    r = post_twilio(client, "/voice/respond", {"SpeechResult": "b"}, signature=sig)
+    assert r.status_code == 403
+
+
 def test_voce_risposta_e_escape_xml():
     client, _ = make_client([([text_block("Controlla zona <3> & morsetto")], "end_turn")])
-    r = client.post("/voice/respond", data={"CallSid": "CA1", "SpeechResult": "sensore in allarme"})
+    r = post_twilio(client, "/voice/respond", {"CallSid": "CA1", "SpeechResult": "sensore in allarme"})
     assert "&lt;3&gt; &amp; morsetto" in r.text
 
 
 def test_whatsapp_risponde_in_twiml():
     client, _ = make_client([([text_block("Ciao tecnico")], "end_turn")])
-    r = client.post("/whatsapp/webhook", data={"From": "whatsapp:+39333", "Body": "aiuto"})
+    r = post_twilio(client, "/whatsapp/webhook", {"From": "whatsapp:+39333", "Body": "aiuto"})
     assert "<Message>Ciao tecnico</Message>" in r.text
+
+
+def test_whatsapp_firma_errata_rifiutata():
+    client, _ = make_client([])
+    r = post_twilio(client, "/whatsapp/webhook", {"Body": "aiuto"}, signature="falsa")
+    assert r.status_code == 403
+
+
+def test_telegram_token_errato_rifiutato():
+    client, claude = make_client([])
+    update = {"message": {"text": "ciao", "chat": {"id": 1}}}
+    r = client.post("/telegram/webhook", json=update,
+                    headers={"X-Telegram-Bot-Api-Secret-Token": "sbagliato"})
+    assert r.status_code == 403
+    assert claude.calls == []
+
+
+def test_telegram_token_corretto_accettato():
+    client, _ = make_client([])
+    r = client.post("/telegram/webhook", json={"message": {}},
+                    headers={"X-Telegram-Bot-Api-Secret-Token": "segreto"})
+    assert r.status_code == 200
 
 
 def test_health():

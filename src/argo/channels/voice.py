@@ -7,10 +7,12 @@ riconosciuto a /voice/respond, in un ciclo fino a fine chiamata.
 
 from xml.sax.saxutils import escape
 
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response
 
-router = APIRouter(prefix="/voice")
+from ..security import verify_twilio
+
+router = APIRouter(prefix="/voice", dependencies=[Depends(verify_twilio)])
 
 VOICE = "Polly.Bianca"  # voce italiana disponibile su Twilio
 GOODBYE_WORDS = ("grazie ciao", "arrivederci", "basta così", "ho finito")

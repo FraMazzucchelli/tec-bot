@@ -4,14 +4,16 @@ import logging
 from xml.sax.saxutils import escape
 
 import httpx
-from fastapi import APIRouter, Form, Request
+from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response
+
+from ..security import verify_telegram, verify_twilio
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
 
-@router.post("/telegram/webhook")
+@router.post("/telegram/webhook", dependencies=[Depends(verify_telegram)])
 def telegram_webhook(update: dict, request: Request) -> dict:
     message = update.get("message") or {}
     text = (message.get("text") or "").strip()
@@ -39,7 +41,7 @@ def telegram_webhook(update: dict, request: Request) -> dict:
     return {"ok": True}
 
 
-@router.post("/whatsapp/webhook")
+@router.post("/whatsapp/webhook", dependencies=[Depends(verify_twilio)])
 def whatsapp_webhook(request: Request, From: str = Form(""), Body: str = Form("")) -> Response:
     assistant = request.app.state.assistant
     text = Body.strip()

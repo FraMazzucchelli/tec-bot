@@ -18,12 +18,16 @@ class Settings(BaseSettings):
     jira_issue_type: str = "Task"
 
     telegram_bot_token: str = ""
+    telegram_webhook_secret: str = ""
 
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""
 
     public_base_url: str = ""
+
+    # Solo per prove in locale senza Twilio/Telegram: MAI true in produzione
+    skip_signature_check: bool = False
 
 
 @lru_cache

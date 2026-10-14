@@ -40,7 +40,32 @@ Per ricevere i webhook in locale esponi la porta con un tunnel (es. `ngrok http 
 |---|---|---|
 | Telefono | Twilio → numero → *A call comes in* | `POST {URL}/voice/incoming` |
 | WhatsApp | Twilio → WhatsApp sender / sandbox | `POST {URL}/whatsapp/webhook` |
-| Telegram | `https://api.telegram.org/bot<TOKEN>/setWebhook?url={URL}/telegram/webhook` | |
+| Telegram | `setWebhook` (vedi sotto) | `POST {URL}/telegram/webhook` |
+
+## Sicurezza dei webhook
+
+Ogni webhook rifiuta con **403** le richieste che non arrivano davvero da Twilio o Telegram.
+
+**Twilio (telefono e WhatsApp)** – firma `X-Twilio-Signature`, verificata con l'Auth Token.
+1. Copia l'**Auth Token** dalla console Twilio (pagina iniziale dell'account) in `TWILIO_AUTH_TOKEN`.
+2. Metti in `PUBLIC_BASE_URL` l'indirizzo pubblico **identico** a quello inserito in Twilio
+   (stesso schema `https`, stesso host, nessuna `/` finale). Se cambia anche solo un
+   carattere la firma non torna e ogni chiamata riceve 403.
+3. Se cambi URL del tunnel (es. nuovo indirizzo ngrok) aggiorna sia Twilio sia `PUBLIC_BASE_URL`.
+
+**Telegram** – header `X-Telegram-Bot-Api-Secret-Token`.
+1. Scegli una stringa casuale (lettere, numeri, `_` e `-`, fino a 256 caratteri), es.
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`, e mettila in `TELEGRAM_WEBHOOK_SECRET`.
+2. Registra il webhook passando lo stesso valore:
+
+   ```bash
+   curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+     -d "url=$PUBLIC_BASE_URL/telegram/webhook" \
+     -d "secret_token=$TELEGRAM_WEBHOOK_SECRET"
+   ```
+
+Per prove in locale senza Twilio/Telegram puoi mettere `SKIP_SIGNATURE_CHECK=true`.
+**Mai in produzione.**
 
 ## Manuali
 
@@ -49,7 +74,6 @@ le sezioni che ARGO cita nelle risposte. `manuals/esempio-centrale.md` è solo u
 
 ## Prossimi passi
 
-- Verifica della firma Twilio e del secret token Telegram sui webhook.
 - Cronologia conversazioni persistente (oggi è in memoria e si perde al riavvio).
 - Risposte in streaming o messaggio di attesa al telefono: Twilio attende al massimo
   ~15 secondi la risposta del webhook.
