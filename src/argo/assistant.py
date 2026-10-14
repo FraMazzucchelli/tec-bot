@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 MAX_TOOL_ROUNDS = 5
 MAX_HISTORY_MESSAGES = 30
 
-SYSTEM_PROMPT = """Sei ARGO, il centralino automatico dell'assistenza tecnica aziendale.
+SYSTEM_PROMPT = """Sei {name}, il centralino automatico dell'assistenza tecnica.
 Parli con tecnici che installano e manutengono impianti di sicurezza e antifurto,
 spesso mentre sono sul campo.
 
@@ -62,7 +62,8 @@ Argomenti ammessi (regola rigida):
 CHANNEL_STYLE = {
     "voce": (
         "Il tecnico è al telefono: risposte brevi (massimo 2-3 frasi), niente elenchi, "
-        "niente formattazione, niente URL. Una istruzione alla volta."
+        "niente formattazione, niente URL. Una istruzione alla volta. "
+        "Se devi dire il tuo nome, scrivilo come si pronuncia: {spoken_name}."
     ),
     "telegram": "Il tecnico scrive in chat: puoi usare brevi elenchi numerati per le procedure.",
     "whatsapp": "Il tecnico scrive su WhatsApp: risposte compatte, elenchi brevi se servono.",
@@ -144,6 +145,8 @@ class Assistant:
         tickets: TicketService | None,
         human_support_number: str = "",
         messenger: Messenger | None = None,
+        name: str = "ARGO",
+        spoken_name: str = "",
     ):
         self.client = client
         self.model = model
@@ -151,6 +154,8 @@ class Assistant:
         self.tickets = tickets
         self.human_support_number = human_support_number
         self.messenger = messenger
+        self.name = name
+        self.spoken_name = spoken_name or name
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._handoffs: set[str] = set()
         self._phones: dict[str, str] = {}
@@ -173,6 +178,8 @@ class Assistant:
             tickets,
             settings.human_support_number,
             messenger,
+            settings.display_name,
+            settings.spoken_name,
         )
 
     def reset(self, session_id: str) -> None:
@@ -192,7 +199,9 @@ class Assistant:
             self._phones[session_id] = phone
         messages = self._history.setdefault(session_id, [])
         messages.append({"role": "user", "content": text})
-        system = SYSTEM_PROMPT + "\n" + CHANNEL_STYLE.get(channel, "")
+        system = SYSTEM_PROMPT.format(name=self.name) + "\n" + CHANNEL_STYLE.get(
+            channel, ""
+        ).format(spoken_name=self.spoken_name)
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = self.client.messages.create(
@@ -273,7 +282,7 @@ class Assistant:
             if p.source == passage.source and p.title == passage.title
         )
         body = (
-            f"📘 ARGO – {passage.source}\n*{passage.title}*\n\n{section}\n\n"
+            f"📘 {self.name} – {passage.source}\n*{passage.title}*\n\n{section}\n\n"
             "Per altre domande richiama l'assistenza."
         )
         self.messenger.send_whatsapp(phone, body)

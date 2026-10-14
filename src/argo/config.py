@@ -7,6 +7,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # Identità dell'assistente
+    assistant_name: str = "AI ASSISTANT"
+    company_name: str = "TEKGROUP"
+    # come va pronunciato il nome dalla voce sintetica italiana
+    assistant_spoken_name: str = "Ei Ai Assistant di Tekgrup"
+
     anthropic_api_key: str = ""
     claude_model: str = "claude-sonnet-5-5"
 
@@ -48,6 +54,17 @@ class Settings(BaseSettings):
     # Solo per prove in locale senza Twilio/Telegram: MAI true in produzione
     skip_signature_check: bool = False
 
+
+    @property
+    def display_name(self) -> str:
+        """Nome scritto, es. 'AI ASSISTANT di TEKGROUP'."""
+        if self.company_name:
+            return f"{self.assistant_name} di {self.company_name}"
+        return self.assistant_name
+
+    @property
+    def spoken_name(self) -> str:
+        return self.assistant_spoken_name or self.display_name
 
     @field_validator("public_base_url")
     @classmethod

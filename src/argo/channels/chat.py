@@ -25,7 +25,10 @@ def telegram_webhook(update: dict, request: Request) -> dict:
     session = f"telegram:{chat_id}"
     if text in ("/start", "/nuovo"):
         assistant.reset(session)
-        answer = "Ciao, sono ARGO, l'assistente automatico dell'assistenza tecnica. Scrivimi il problema sull'impianto e ti aiuto."
+        answer = (
+            f"Ciao, sono {request.app.state.settings.display_name}, l'assistente automatico "
+            "dell'assistenza tecnica. Scrivimi il problema sull'impianto e ti aiuto."
+        )
     else:
         answer = assistant.reply(session, text, "telegram")
 
