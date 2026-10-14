@@ -140,6 +140,15 @@ Limiti di WhatsApp:
   un modello (template) approvato da Meta.
 - Chiamate con numero nascosto: l'invio non è possibile e ARGO lo dice al tecnico.
 
+## Privacy (GDPR)
+
+- Numeri di telefono mascherati nei log (`logging_privacy.py`).
+- Conversazioni in memoria cancellate dopo 30 minuti di inattività.
+- Pagina web senza risorse di terzi (niente Google Fonts, nessun cookie), con informativa breve
+  sotto il modulo; `PRIVACY_POLICY_URL` aggiunge il link all'informativa completa del titolare.
+- Il saluto dichiara che risponde un assistente automatico (AI Act).
+- L'assistente non chiede né scrive nei ticket dati personali non necessari.
+
 ## Argomenti ammessi
 
 ARGO risponde solo su temi tecnici (impianti di sicurezza, interventi, ticket). Alle
