@@ -111,34 +111,51 @@ def _split(path: Path, root: Path) -> list[Passage]:
     return passages
 
 
-PDF_CHUNK_CHARS = 1200
+PDF_PAGE_MAX_CHARS = 8000  # oltre, la pagina viene divisa ripetendo l'intestazione
+PDF_HEADER_LINES = 4
+_COLUMN_GAP = re.compile(r"\s{3,}")
+
+
+def _page_lines(page) -> list[str]:
+    """Testo della pagina riga per riga, mantenendo l'impaginazione.
+
+    Le schede tecniche sono tabelle con un modello per colonna: l'estrazione
+    "layout" tiene ogni caratteristica sulla stessa riga dei suoi valori e i
+    grandi spazi tra le colonne diventano " | ".
+    """
+    text = page.extract_text(layout=True, x_density=4, y_density=13) or ""
+    return [_COLUMN_GAP.sub(" | ", line.strip()) for line in text.splitlines() if line.strip()]
 
 
 def _split_pdf(path: Path, root: Path) -> list[Passage]:
-    """Divide un PDF in blocchi di testo per pagina (il titolo indica la pagina).
+    """Un blocco per pagina, così intestazioni e valori delle tabelle restano insieme.
 
     Funziona solo con PDF che contengono testo: le scansioni (immagini) vanno
     prima passate in un OCR.
     """
-    from pypdf import PdfReader
+    import pdfplumber
 
     source = str(path.relative_to(root))
     passages: list[Passage] = []
-    for number, page in enumerate(PdfReader(path).pages, start=1):
-        title = f"{path.stem}, pag. {number}"
-        chunk: list[str] = []
-        size = 0
-        for line in (page.extract_text() or "").splitlines():
-            line = line.strip()
-            if not line:
+    with pdfplumber.open(path) as pdf:
+        for number, page in enumerate(pdf.pages, start=1):
+            title = f"{path.stem}, pag. {number}"
+            lines = _page_lines(page)
+            if not lines:
                 continue
-            chunk.append(line)
-            size += len(line)
-            if size >= PDF_CHUNK_CHARS:
-                passages.append(Passage(source, title, "\n".join(chunk)))
-                chunk, size = [], 0
-        if chunk:
-            passages.append(Passage(source, title, "\n".join(chunk)))
+            if sum(len(line) for line in lines) <= PDF_PAGE_MAX_CHARS:
+                passages.append(Passage(source, title, "\n".join(lines)))
+                continue
+            # pagina molto lunga: blocchi più piccoli, ognuno con l'intestazione
+            header, body = lines[:PDF_HEADER_LINES], lines[PDF_HEADER_LINES:]
+            chunk: list[str] = []
+            for line in body:
+                chunk.append(line)
+                if sum(len(x) for x in chunk) >= PDF_PAGE_MAX_CHARS // 2:
+                    passages.append(Passage(source, title, "\n".join(header + chunk)))
+                    chunk = []
+            if chunk:
+                passages.append(Passage(source, title, "\n".join(header + chunk)))
     if not passages:
         log.warning("Nessun testo estratto da %s (forse è una scansione)", path)
     return passages
