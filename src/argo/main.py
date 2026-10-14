@@ -48,11 +48,20 @@ def create_app(settings: Settings | None = None, assistant: Assistant | None = N
                 "whatsapp": assistant.messenger is not None,
                 "whatsapp_mittente_ok": s.twilio_whatsapp_from.removeprefix("whatsapp:").startswith("+"),
                 "ticket_jira": assistant.tickets is not None,
+                "ticket_progetto": s.jira_project_key if assistant.tickets is not None else None,
                 "operatore": bool(s.human_support_number),
                 "fatti_chiamare": bool(s.callback_enabled and s.twilio_voice_from),
                 "codice_accesso": bool(s.callback_password),
             },
         }
+
+    @app.get("/health/jira")
+    def health_jira() -> dict:
+        """Prova l'accesso a Jira senza creare ticket: 'ok' oppure il motivo dell'errore."""
+        tickets = assistant.tickets
+        if tickets is None or not hasattr(tickets, "check"):
+            return {"jira": "non configurato (manca JIRA_BASE_URL)"}
+        return {"jira": tickets.check()}
 
     return app
 
