@@ -1,0 +1,171 @@
+"""Nucleo di ARGO: conversazione con Claude, indipendente dal canale.
+
+Ogni canale (voce, Telegram, WhatsApp) chiama `Assistant.reply(session_id,
+testo, canale)` e riceve il testo da restituire al tecnico.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
+from .knowledge import KnowledgeBase
+
+if TYPE_CHECKING:
+    from .tickets import TicketService
+
+log = logging.getLogger(__name__)
+
+MAX_TOOL_ROUNDS = 5
+MAX_HISTORY_MESSAGES = 30
+
+SYSTEM_PROMPT = """Sei ARGO, il centralino automatico dell'assistenza tecnica aziendale.
+Parli con tecnici che installano e manutengono impianti di sicurezza e antifurto,
+spesso mentre sono sul campo.
+
+Come lavori:
+- Per ogni domanda tecnica cerca prima nei manuali con lo strumento `cerca_manuali`
+  e rispondi basandoti su quello che trovi, citando il manuale.
+- Se i manuali non coprono il problema, o il tecnico non riesce a risolverlo,
+  proponi di aprire un ticket. Prima di aprirlo raccogli: impianto/cliente,
+  modello del dispositivo, sintomo, cosa è già stato provato. Poi usa `apri_ticket`
+  e comunica il numero del ticket.
+- Non inventare procedure, codici o valori che non trovi nei manuali.
+- Per interventi pericolosi (tensione di rete, lavori in quota) ricorda le norme
+  di sicurezza e, nel dubbio, suggerisci di sentire un referente.
+- Rispondi in italiano, in modo pratico e diretto, come un collega esperto.
+"""
+
+CHANNEL_STYLE = {
+    "voce": (
+        "Il tecnico è al telefono: risposte brevi (massimo 2-3 frasi), niente elenchi, "
+        "niente formattazione, niente URL. Una istruzione alla volta."
+    ),
+    "telegram": "Il tecnico scrive in chat: puoi usare brevi elenchi numerati per le procedure.",
+    "whatsapp": "Il tecnico scrive su WhatsApp: risposte compatte, elenchi brevi se servono.",
+}
+
+TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "cerca_manuali",
+        "description": (
+            "Cerca nei manuali tecnici aziendali procedure, codici errore e "
+            "configurazioni di centrali, sensori e impianti."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Parole chiave della ricerca"}
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "apri_ticket",
+        "description": (
+            "Apre un ticket di assistenza quando il problema non si risolve con i manuali. "
+            "Usalo solo dopo aver raccolto i dettagli necessari."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "titolo": {"type": "string", "description": "Titolo breve del problema"},
+                "descrizione": {
+                    "type": "string",
+                    "description": "Impianto/cliente, dispositivo, sintomo, prove già fatte",
+                },
+            },
+            "required": ["titolo", "descrizione"],
+        },
+    },
+]
+
+
+class Assistant:
+    def __init__(
+        self,
+        client: Any,
+        model: str,
+        knowledge: KnowledgeBase,
+        tickets: TicketService | None,
+    ):
+        self.client = client
+        self.model = model
+        self.knowledge = knowledge
+        self.tickets = tickets
+        self._history: dict[str, list[dict[str, Any]]] = {}
+
+    @classmethod
+    def from_settings(cls, settings, knowledge: KnowledgeBase, tickets: TicketService | None):
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+        return cls(client, settings.claude_model, knowledge, tickets)
+
+    def reset(self, session_id: str) -> None:
+        self._history.pop(session_id, None)
+
+    def reply(self, session_id: str, text: str, channel: str) -> str:
+        messages = self._history.setdefault(session_id, [])
+        messages.append({"role": "user", "content": text})
+        system = SYSTEM_PROMPT + "\n" + CHANNEL_STYLE.get(channel, "")
+
+        for _ in range(MAX_TOOL_ROUNDS):
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=1024,
+                system=system,
+                tools=TOOLS,
+                messages=messages,
+            )
+            messages.append({"role": "assistant", "content": response.content})
+
+            if response.stop_reason != "tool_use":
+                answer = "".join(b.text for b in response.content if b.type == "text").strip()
+                self._trim(session_id)
+                return answer or "Scusa, non ho capito. Puoi ripetere?"
+
+            results = [
+                {
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": self._run_tool(block.name, block.input, session_id),
+                }
+                for block in response.content
+                if block.type == "tool_use"
+            ]
+            messages.append({"role": "user", "content": results})
+
+        self._trim(session_id)
+        return "Non riesco a completare la richiesta. Vuoi che apra un ticket per un collega?"
+
+    def _run_tool(self, name: str, args: dict[str, Any], session_id: str) -> str:
+        try:
+            if name == "cerca_manuali":
+                hits = self.knowledge.search(args.get("query", ""))
+                if not hits:
+                    return "Nessun risultato nei manuali."
+                return "\n\n".join(
+                    f"[{h.passage.source} - {h.passage.title}]\n{h.passage.text}" for h in hits
+                )
+            if name == "apri_ticket":
+                if self.tickets is None:
+                    return "Errore: il sistema ticket non è configurato."
+                ticket = self.tickets.create(args["titolo"], args["descrizione"], session_id)
+                return f"Ticket aperto: {ticket.key} ({ticket.url})"
+            return f"Strumento sconosciuto: {name}"
+        except Exception as exc:  # l'errore torna a Claude, che lo spiega al tecnico
+            log.exception("Errore nello strumento %s", name)
+            return f"Errore: {exc}"
+
+    def _trim(self, session_id: str) -> None:
+        """Tiene la cronologia corta, tagliando solo su un messaggio utente di testo."""
+        messages = self._history[session_id]
+        if len(messages) <= MAX_HISTORY_MESSAGES:
+            return
+        cut = len(messages) - MAX_HISTORY_MESSAGES
+        while cut < len(messages) and not (
+            messages[cut]["role"] == "user" and isinstance(messages[cut]["content"], str)
+        ):
+            cut += 1
+        self._history[session_id] = messages[cut:]

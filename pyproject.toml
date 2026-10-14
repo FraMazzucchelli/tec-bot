@@ -1,0 +1,28 @@
+[project]
+name = "tec-bot"
+version = "0.1.0"
+description = "ARGO - centralino automatico per l'assistenza ai tecnici (voce + chat)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "anthropic>=0.40",
+    "httpx>=0.27",
+    "pydantic-settings>=2.2",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+asyncio_mode = "auto"
