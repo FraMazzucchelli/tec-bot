@@ -296,6 +296,21 @@ def test_invio_manuale_whatsapp_sezione_intera():
     assert "Ruotare la ghiera" in body and "3 attivazioni" in body  # entrambi i paragrafi
 
 
+def test_invio_whatsapp_testo_rielaborato():
+    messenger = FakeMessenger()
+    testo = "*Nebbiogeno DT-800*\n• Riscaldamento da freddo: max 12 minuti\nFonte: scheda tecnica Serie LAN"
+    claude = FakeClaude([
+        ([tool_block("invia_manuale_whatsapp", {"testo": testo})], "tool_use"),
+        ([text_block("Te l'ho mandato.")], "end_turn"),
+    ])
+    assistant = Assistant(claude, "m", kb(), None, "", messenger, "AI ASSISTANT di TEKGROUP")
+    assistant.reply("voce:CA1", "mandamelo su whatsapp", "voce", phone="+393331112222")
+    to, body = messenger.sent[0]
+    assert to == "+393331112222"
+    assert body.startswith("📘 *AI ASSISTANT di TEKGROUP*") and testo in body
+    assert "|" not in body
+
+
 def test_invio_manuale_chiamata_anonima():
     messenger = FakeMessenger()
     claude = FakeClaude([

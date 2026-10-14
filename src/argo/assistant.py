@@ -40,9 +40,16 @@ Come lavori:
 - Se il tecnico chiede di parlare con una persona, se la situazione è urgente o
   pericolosa, o se non riuscite a risolvere e il tecnico non vuole un ticket, usa
   `passa_a_operatore`. Dopo averlo usato, saluta con una frase breve.
-- Al telefono, se il tecnico chiede di ricevere la procedura per iscritto (es.
-  "mandamela su WhatsApp"), usa `invia_manuale_whatsapp` con l'argomento preciso.
-  Proponilo anche tu quando la procedura ha molti passaggi.
+- Al telefono, se il tecnico chiede di ricevere le informazioni per iscritto (es.
+  "mandamela su WhatsApp"), usa `invia_manuale_whatsapp`. Proponilo anche tu quando
+  la procedura ha molti passaggi o ci sono molti valori. Prima consulta il manuale con
+  `cerca_manuali`, poi scrivi tu il messaggio nel campo `testo`:
+  - solo i dati che servono per il modello e il problema del tecnico (non l'intera
+    tabella né i valori degli altri modelli);
+  - formattazione WhatsApp: *grassetto* per il titolo e le etichette, elenco con "•"
+    oppure passi numerati, righe brevi; niente tabelle né simboli "|";
+  - massimo circa 900 caratteri; in fondo la fonte, es. "Fonte: scheda tecnica Serie LAN";
+  - SOLO valori presenti nel manuale, copiati senza arrotondare: mai inventare.
 - Rispondi in italiano, in modo pratico e diretto, come un collega esperto.
 
 Argomenti ammessi (regola rigida):
@@ -119,18 +126,28 @@ TOOLS: list[dict[str, Any]] = [
     {
         "name": "invia_manuale_whatsapp",
         "description": (
-            "Invia su WhatsApp al numero del tecnico che sta chiamando la sezione del "
-            "manuale più pertinente all'argomento indicato."
+            "Invia su WhatsApp al numero del tecnico che sta chiamando un messaggio con le "
+            "informazioni del manuale, già rielaborato e impaginato da te."
         ),
         "input_schema": {
             "type": "object",
             "properties": {
+                "testo": {
+                    "type": "string",
+                    "description": (
+                        "Il messaggio WhatsApp da inviare, scritto da te con i soli dati del "
+                        "manuale utili al tecnico (vedi regole nel prompt)."
+                    ),
+                },
                 "argomento": {
                     "type": "string",
-                    "description": "Argomento preciso con modello, es. 'nebbiogeno DT-800 capacità serbatoio'",
-                }
+                    "description": (
+                        "Argomento con modello, es. 'nebbiogeno DT-800 capacità serbatoio'. "
+                        "Usato solo se non scrivi il testo: invia la sezione del manuale così com'è."
+                    ),
+                },
             },
-            "required": ["argomento"],
+            "required": ["testo"],
         },
     },
 ]
@@ -259,19 +276,31 @@ class Assistant:
                     )
                 return f"Comunica al tecnico di chiamare l'assistenza al numero {self.human_support_number}."
             if name == "invia_manuale_whatsapp":
-                return self._send_manual(args.get("argomento", ""), session_id)
+                return self._send_manual(
+                    args.get("argomento", ""), session_id, text=args.get("testo", "")
+                )
             return f"Strumento sconosciuto: {name}"
         except Exception as exc:  # l'errore torna a Claude, che lo spiega al tecnico
             log.exception("Errore nello strumento %s", name)
             return f"Errore: {exc}"
 
-    def _send_manual(self, topic: str, session_id: str) -> str:
+    def _send_manual(self, topic: str, session_id: str, text: str = "") -> str:
         phone = self._phones.get(session_id, "")
         if self.messenger is None:
             log.warning("WhatsApp non configurato: servono TWILIO_ACCOUNT_SID e TWILIO_WHATSAPP_FROM")
             return "Errore: l'invio WhatsApp non è configurato sul server."
         if not phone or phone.startswith("client:") or phone.lower() in {"anonymous", "+266696687"}:
             return "Errore: il numero del chiamante non è disponibile (chiamata anonima)."
+
+        text = text.strip()
+        if text:
+            # messaggio già rielaborato dall'assistente: lo inviamo con un'intestazione
+            self.messenger.send_whatsapp(
+                phone, f"📘 *{self.name}*\n\n{text}\n\nPer altre domande richiama l'assistenza."
+            )
+            return "Messaggio inviato su WhatsApp."
+
+        # ripiego: nessun testo scritto, si invia la sezione del manuale così com'è
         hits = self.knowledge.search(topic, limit=1)
         if not hits:
             return "Nessuna sezione del manuale trovata su questo argomento: non ho inviato nulla."
