@@ -71,7 +71,7 @@ class CallLimiter:
         self.calls = [(t, n) for t, n in self.calls if now - t < 3600]
         if any(n == number and now - t < self.per_number_seconds for t, n in self.calls):
             return "Hai appena ricevuto una chiamata da ARGO: riprova tra qualche minuto."
-        if len(self.calls) >= self.max_per_hour:
+        if self.max_per_hour and len(self.calls) >= self.max_per_hour:
             return "ARGO ha già fatto molte chiamate nell'ultima ora: riprova più tardi."
         return None
 

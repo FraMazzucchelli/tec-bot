@@ -37,8 +37,10 @@ class Settings(BaseSettings):
     callback_password: str = ""
     # numeri extra ammessi oltre ai cellulari italiani (es. esteri), separati da virgola
     callback_numbers: str = ""
-    callback_max_per_hour: int = 20
-    callback_cooldown_seconds: int = 180  # attesa minima tra due chiamate allo stesso numero (0 = nessuna)
+    # Limiti delle chiamate di prova: 0 = nessun limite (fase di test).
+    # Prima di condividere il codice di accesso: es. 20 l'ora e 180 secondi.
+    callback_max_per_hour: int = 0
+    callback_cooldown_seconds: int = 0
 
     public_base_url: str = ""
 

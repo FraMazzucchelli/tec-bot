@@ -384,7 +384,7 @@ def test_chiamami_avvia_chiamata(monkeypatch):
 
 def test_chiamami_limiti(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
-    client = make_callback_client(callback_max_per_hour=2)
+    client = make_callback_client(callback_max_per_hour=2, callback_cooldown_seconds=180)
     ok = {"codice": "segreta"}
     assert client.post("/chiamami", data={**ok, "numero": "3331111111"}).status_code == 200
     # stesso numero subito dopo: rifiutato
@@ -400,6 +400,15 @@ def test_chiamami_numero_extra_autorizzato(monkeypatch):
     client = make_callback_client(callback_numbers="+44 7700 900123")
     r = client.post("/chiamami", data={"numero": "+447700900123", "codice": "segreta"})
     assert r.status_code == 200 and chiamate[0][1]["To"] == "+447700900123"
+
+
+def test_chiamami_senza_limiti_di_default(monkeypatch):
+    chiamate = fake_twilio(monkeypatch)
+    client = make_callback_client()
+    for _ in range(30):
+        r = client.post("/chiamami", data={"numero": "3331111111", "codice": "segreta"})
+        assert r.status_code == 200
+    assert len(chiamate) == 30
 
 
 def test_limiter_scade():
