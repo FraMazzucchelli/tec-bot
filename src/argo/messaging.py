@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+import logging
+import threading
+import time
+from typing import TYPE_CHECKING, Callable, Protocol
 
 import httpx
 
 if TYPE_CHECKING:
     from .config import Settings
 
+log = logging.getLogger(__name__)
+
 WHATSAPP_MAX_CHARS = 1500  # Twilio accetta al massimo 1600 caratteri per messaggio
+# La sandbox WhatsApp invia al massimo un messaggio ogni 3 secondi
+SECONDS_BETWEEN_PARTS = 3.2
 
 
 class Messenger(Protocol):
@@ -17,24 +24,51 @@ class Messenger(Protocol):
 
 
 class TwilioWhatsApp:
-    def __init__(self, settings: Settings, client: httpx.Client | None = None):
+    def __init__(
+        self,
+        settings: Settings,
+        client: httpx.Client | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+        background: Callable[[Callable[[], None]], None] | None = None,
+    ):
         self.settings = settings
         self.client = client or httpx.Client(timeout=15)
+        self.sleep = sleep
+        self.background = background or (lambda fn: threading.Thread(target=fn, daemon=True).start())
 
-    def send_whatsapp(self, to_number: str, body: str) -> None:
+    def _post(self, to: str, part: str) -> None:
         s = self.settings
-        to = to_number if to_number.startswith("whatsapp:") else f"whatsapp:{to_number}"
         sender = s.twilio_whatsapp_from
         if not sender.startswith("whatsapp:"):
             sender = f"whatsapp:{sender}"
-        for part in split_message(body):
-            response = self.client.post(
-                f"https://api.twilio.com/2010-04-01/Accounts/{s.twilio_account_sid}/Messages.json",
-                data={"From": sender, "To": to, "Body": part},
-                auth=(s.twilio_account_sid, s.twilio_auth_token),
-            )
-            if response.status_code >= 400:
-                raise WhatsAppError(_twilio_error(response))
+        response = self.client.post(
+            f"https://api.twilio.com/2010-04-01/Accounts/{s.twilio_account_sid}/Messages.json",
+            data={"From": sender, "To": to, "Body": part},
+            auth=(s.twilio_account_sid, s.twilio_auth_token),
+        )
+        if response.status_code >= 400:
+            raise WhatsAppError(_twilio_error(response))
+
+    def send_whatsapp(self, to_number: str, body: str) -> None:
+        """Invia il primo messaggio subito (così un errore arriva al tecnico) e gli
+        eventuali altri pezzi in background, distanziati per rispettare i limiti della
+        sandbox senza far aspettare la telefonata."""
+        to = to_number if to_number.startswith("whatsapp:") else f"whatsapp:{to_number}"
+        first, *rest = split_message(body)
+        self._post(to, first)
+        if not rest:
+            return
+
+        def send_rest() -> None:
+            for part in rest:
+                self.sleep(SECONDS_BETWEEN_PARTS)
+                try:
+                    self._post(to, part)
+                except Exception:
+                    log.exception("WhatsApp: invio di una parte successiva fallito")
+                    return
+
+        self.background(send_rest)
 
 
 class WhatsAppError(Exception):

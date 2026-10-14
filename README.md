@@ -129,7 +129,7 @@ Al telefono il tecnico può chiedere "mandamela su WhatsApp": ARGO invia al nume
 chiamante l'intera sezione del manuale (o pagina del PDF) sull'argomento, via Twilio.
 
 Variabili: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`
-(per le prove il numero della **WhatsApp Sandbox** di Twilio, es. `whatsapp:+14155238886`).
+(per le prove il numero della **WhatsApp Sandbox** di Twilio, `whatsapp:+14155238886`). La sandbox si attiva solo dalla console legacy: https://www.twilio.com/console/sms/whatsapp/sandbox. Invia al massimo un messaggio ogni 3 secondi: i testi lunghi partono a pezzi distanziati.
 
 Limiti di WhatsApp:
 - **Sandbox**: ogni tecnico deve prima scrivere `join <parola-chiave>` al numero della
