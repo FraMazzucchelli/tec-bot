@@ -64,7 +64,7 @@ def respond(
 
     session = f"voce:{CallSid}"
     try:
-        answer = assistant.reply(session, f"[chiamata da {From}] {text}", "voce")
+        answer = assistant.reply(session, text, "voce", phone=From)
     except Exception:
         log.exception("Errore durante la risposta vocale")
         answer = "Scusa, ho un problema tecnico in questo momento."

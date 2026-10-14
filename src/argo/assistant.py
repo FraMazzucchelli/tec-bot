@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any
 from .knowledge import KnowledgeBase
 
 if TYPE_CHECKING:
+    from .messaging import Messenger
     from .tickets import TicketService
 
 log = logging.getLogger(__name__)
@@ -36,6 +37,9 @@ Come lavori:
 - Se il tecnico chiede di parlare con una persona, se la situazione è urgente o
   pericolosa, o se non riuscite a risolvere e il tecnico non vuole un ticket, usa
   `passa_a_operatore`. Dopo averlo usato, saluta con una frase breve.
+- Al telefono, se il tecnico chiede di ricevere la procedura per iscritto (es.
+  "mandamela su WhatsApp"), usa `invia_manuale_whatsapp` con l'argomento preciso.
+  Proponilo anche tu quando la procedura ha molti passaggi.
 - Rispondi in italiano, in modo pratico e diretto, come un collega esperto.
 
 Argomenti ammessi (regola rigida):
@@ -108,6 +112,23 @@ TOOLS: list[dict[str, Any]] = [
             "required": ["motivo"],
         },
     },
+    {
+        "name": "invia_manuale_whatsapp",
+        "description": (
+            "Invia su WhatsApp al numero del tecnico che sta chiamando la sezione del "
+            "manuale più pertinente all'argomento indicato."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "argomento": {
+                    "type": "string",
+                    "description": "Argomento preciso, es. 'MicoGuard sostituzione cartuccia diffusore'",
+                }
+            },
+            "required": ["argomento"],
+        },
+    },
 ]
 
 
@@ -119,27 +140,42 @@ class Assistant:
         knowledge: KnowledgeBase,
         tickets: TicketService | None,
         human_support_number: str = "",
+        messenger: Messenger | None = None,
     ):
         self.client = client
         self.model = model
         self.knowledge = knowledge
         self.tickets = tickets
         self.human_support_number = human_support_number
+        self.messenger = messenger
         self._history: dict[str, list[dict[str, Any]]] = {}
         self._handoffs: set[str] = set()
+        self._phones: dict[str, str] = {}
 
     @classmethod
-    def from_settings(cls, settings, knowledge: KnowledgeBase, tickets: TicketService | None):
+    def from_settings(
+        cls,
+        settings,
+        knowledge: KnowledgeBase,
+        tickets: TicketService | None,
+        messenger: Messenger | None = None,
+    ):
         import anthropic
 
         client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
         return cls(
-            client, settings.claude_model, knowledge, tickets, settings.human_support_number
+            client,
+            settings.claude_model,
+            knowledge,
+            tickets,
+            settings.human_support_number,
+            messenger,
         )
 
     def reset(self, session_id: str) -> None:
         self._history.pop(session_id, None)
         self._handoffs.discard(session_id)
+        self._phones.pop(session_id, None)
 
     def take_handoff(self, session_id: str) -> bool:
         """True se in questo turno è stato chiesto il trasferimento a un operatore."""
@@ -148,7 +184,9 @@ class Assistant:
             return True
         return False
 
-    def reply(self, session_id: str, text: str, channel: str) -> str:
+    def reply(self, session_id: str, text: str, channel: str, phone: str = "") -> str:
+        if phone:
+            self._phones[session_id] = phone
         messages = self._history.setdefault(session_id, [])
         messages.append({"role": "user", "content": text})
         system = SYSTEM_PROMPT + "\n" + CHANNEL_STYLE.get(channel, "")
@@ -194,7 +232,8 @@ class Assistant:
             if name == "apri_ticket":
                 if self.tickets is None:
                     return "Errore: il sistema ticket non è configurato."
-                ticket = self.tickets.create(args["titolo"], args["descrizione"], session_id)
+                contact = self._phones.get(session_id) or session_id
+                ticket = self.tickets.create(args["titolo"], args["descrizione"], contact)
                 return f"Ticket aperto: {ticket.key} ({ticket.url})"
             if name == "passa_a_operatore":
                 log.info("Richiesto operatore per %s: %s", session_id, args.get("motivo", ""))
@@ -207,10 +246,35 @@ class Assistant:
                         "all'operatore. Di' solo una frase breve, es. 'Ti passo un collega'."
                     )
                 return f"Comunica al tecnico di chiamare l'assistenza al numero {self.human_support_number}."
+            if name == "invia_manuale_whatsapp":
+                return self._send_manual(args.get("argomento", ""), session_id)
             return f"Strumento sconosciuto: {name}"
         except Exception as exc:  # l'errore torna a Claude, che lo spiega al tecnico
             log.exception("Errore nello strumento %s", name)
             return f"Errore: {exc}"
+
+    def _send_manual(self, topic: str, session_id: str) -> str:
+        phone = self._phones.get(session_id, "")
+        if self.messenger is None:
+            return "Errore: l'invio WhatsApp non è configurato."
+        if not phone or phone.startswith("client:") or phone.lower() in {"anonymous", "+266696687"}:
+            return "Errore: il numero del chiamante non è disponibile (chiamata anonima)."
+        hits = self.knowledge.search(topic, limit=1)
+        if not hits:
+            return "Nessuna sezione del manuale trovata su questo argomento: non ho inviato nulla."
+        passage = hits[0].passage
+        # tutta la sezione (o pagina PDF), non solo il paragrafo trovato
+        section = "\n\n".join(
+            p.text
+            for p in self.knowledge.passages
+            if p.source == passage.source and p.title == passage.title
+        )
+        body = (
+            f"📘 ARGO – {passage.source}\n*{passage.title}*\n\n{section}\n\n"
+            "Per altre domande richiama l'assistenza."
+        )
+        self.messenger.send_whatsapp(phone, body)
+        return f"Inviata su WhatsApp la sezione '{passage.title}' di {passage.source}."
 
     def _trim(self, session_id: str) -> None:
         """Tiene la cronologia corta, tagliando solo su un messaggio utente di testo."""

@@ -110,6 +110,23 @@ riporta quante sezioni ha caricato. `manuals/esempio-centrale.md` è solo un ese
 documentazione interna o manuali dei produttori rendi il repo privato
 (GitHub → *Settings → General → Danger Zone → Change visibility*).
 
+## Manuale su WhatsApp durante la chiamata
+
+Al telefono il tecnico può chiedere "mandamela su WhatsApp": ARGO invia al numero
+chiamante l'intera sezione del manuale (o pagina del PDF) sull'argomento, via Twilio.
+
+Variabili: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`
+(per le prove il numero della **WhatsApp Sandbox** di Twilio, es. `whatsapp:+14155238886`).
+
+Limiti di WhatsApp:
+- **Sandbox**: ogni tecnico deve prima scrivere `join <parola-chiave>` al numero della
+  sandbox (la trovi in *Messaging → Try it out → Send a WhatsApp message*); l'iscrizione
+  scade dopo qualche giorno e va rinnovata.
+- **In produzione** serve un mittente WhatsApp Business approvato. WhatsApp permette
+  messaggi liberi solo entro 24 ore dall'ultimo messaggio del tecnico; altrimenti serve
+  un modello (template) approvato da Meta.
+- Chiamate con numero nascosto: l'invio non è possibile e ARGO lo dice al tecnico.
+
 ## Argomenti ammessi
 
 ARGO risponde solo su temi tecnici (impianti di sicurezza, interventi, ticket). Alle

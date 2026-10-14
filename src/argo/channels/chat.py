@@ -46,7 +46,7 @@ def whatsapp_webhook(request: Request, From: str = Form(""), Body: str = Form(""
     assistant = request.app.state.assistant
     text = Body.strip()
     answer = (
-        assistant.reply(f"whatsapp:{From}", text, "whatsapp")
+        assistant.reply(f"whatsapp:{From}", text, "whatsapp", phone=From)
         if text
         else "Scrivimi il problema sull'impianto e ti aiuto."
     )

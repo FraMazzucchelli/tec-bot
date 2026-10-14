@@ -271,6 +271,47 @@ def test_dial_status():
     assert "non è raggiungibile" in post_twilio(client, "/voice/dial-status", {"DialCallStatus": "no-answer"}).text
 
 
+class FakeMessenger:
+    def __init__(self):
+        self.sent = []
+
+    def send_whatsapp(self, to_number, body):
+        self.sent.append((to_number, body))
+
+
+def test_invio_manuale_whatsapp_sezione_intera():
+    messenger = FakeMessenger()
+    claude = FakeClaude([
+        ([tool_block("invia_manuale_whatsapp", {"argomento": "cartuccia Spora Placida inserimento"})], "tool_use"),
+        ([text_block("Te l'ho mandata.")], "end_turn"),
+    ])
+    assistant = Assistant(claude, "m", kb(), None, "", messenger)
+    assistant.reply("voce:CA1", "mandamela su whatsapp", "voce", phone="+393331112222")
+
+    to, body = messenger.sent[0]
+    assert to == "+393331112222"
+    assert "3.4 Inserimento della cartuccia" in body
+    assert "Ruotare la ghiera" in body and "3 attivazioni" in body  # entrambi i paragrafi
+
+
+def test_invio_manuale_chiamata_anonima():
+    messenger = FakeMessenger()
+    claude = FakeClaude([
+        ([tool_block("invia_manuale_whatsapp", {"argomento": "ugello"})], "tool_use"),
+        ([text_block("ok")], "end_turn"),
+    ])
+    Assistant(claude, "m", kb(), None, "", messenger).reply("voce:CA2", "x", "voce", phone="anonymous")
+    assert messenger.sent == []
+
+
+def test_split_message():
+    from argo.messaging import split_message
+
+    parts = split_message("riga\n" * 1000)
+    assert len(parts) > 1 and all(len(p) <= 1500 for p in parts)
+    assert "".join(split_message("x" * 4000)) == "x" * 4000
+
+
 def test_health():
     client, _ = make_client([])
     assert client.get("/health").json()["status"] == "ok"
