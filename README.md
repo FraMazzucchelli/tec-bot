@@ -120,7 +120,7 @@ telefonico blocca le chiamate verso gli USA. Il vecchio indirizzo `/chiamami` po
 Variabili: `TWILIO_VOICE_FROM` (il numero Twilio, es. `+16812562315`) e `CALLBACK_PASSWORD`
 (il codice di accesso da dare a chi deve provare). Protezioni:
 - solo cellulari italiani (`+39 3…`); altri numeri vanno elencati in `CALLBACK_NUMBERS`, separati da virgola;
-- una chiamata ogni 3 minuti per numero e al massimo `CALLBACK_MAX_PER_HOUR` (predefinito 20) in totale;
+- una chiamata ogni `CALLBACK_COOLDOWN_SECONDS` secondi per numero (predefinito 180, `0` = nessuna attesa) e al massimo `CALLBACK_MAX_PER_HOUR` (predefinito 20) in totale;
 - ogni chiamata si chiude dopo 5 minuti.
 
 ## Manuale su WhatsApp durante la chiamata

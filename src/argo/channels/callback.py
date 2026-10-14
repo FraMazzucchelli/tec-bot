@@ -7,7 +7,8 @@ Per il tecnico è una chiamata in arrivo, quindi gratuita.
 Protezioni contro abusi e spese impreviste:
 - codice di accesso obbligatorio (CALLBACK_PASSWORD);
 - solo cellulari italiani (+39 3...), più eventuali numeri in CALLBACK_NUMBERS;
-- al massimo una chiamata ogni 3 minuti per numero e CALLBACK_MAX_PER_HOUR in totale;
+- al massimo una chiamata ogni CALLBACK_COOLDOWN_SECONDS (predefinito 180) per numero
+  e CALLBACK_MAX_PER_HOUR in totale;
 - ogni chiamata si chiude dopo 5 minuti (TimeLimit di Twilio).
 """
 
@@ -31,7 +32,6 @@ TEMPLATE = (Path(__file__).resolve().parent.parent / "templates" / "landing.html
     encoding="utf-8"
 )
 ITALIAN_MOBILE = re.compile(r"^\+393\d{8,9}$")
-PER_NUMBER_SECONDS = 180
 CALL_TIME_LIMIT_SECONDS = 300
 
 
@@ -82,7 +82,9 @@ class CallLimiter:
 def _limiter(request: Request) -> CallLimiter:
     state = request.app.state
     if not hasattr(state, "call_limiter"):
-        state.call_limiter = CallLimiter(PER_NUMBER_SECONDS, state.settings.callback_max_per_hour)
+        state.call_limiter = CallLimiter(
+            state.settings.callback_cooldown_seconds, state.settings.callback_max_per_hour
+        )
     return state.call_limiter
 
 

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # numeri extra ammessi oltre ai cellulari italiani (es. esteri), separati da virgola
     callback_numbers: str = ""
     callback_max_per_hour: int = 20
+    callback_cooldown_seconds: int = 180  # attesa minima tra due chiamate allo stesso numero (0 = nessuna)
 
     public_base_url: str = ""
 
