@@ -29,9 +29,26 @@ PAGE = """<!doctype html>
  input,select,button{{width:100%;padding:10px;font-size:1rem;box-sizing:border-box;border:1px solid #bbb;border-radius:8px}}
  button{{margin-top:18px;background:#1f5eff;color:#fff;border:none;cursor:pointer}}
  .msg{{margin-top:18px;padding:10px;border-radius:8px;background:#eef3ff}}
+ .demo{{margin:18px 0;padding:12px 14px;border-radius:8px;background:#f1f7ee;border:1px solid #cfe3c6;font-size:.95rem}}
+ .demo h2{{font-size:1.05rem;margin:0 0 6px}} .demo ul{{margin:6px 0 0;padding-left:18px}}
 </style></head><body>
 <h1>ARGO – Chiamami</h1>
 <p>ARGO ti telefona e parli con l'assistente come se avessi chiamato tu.</p>
+<div class="demo">
+ <h2>Il sistema di prova: MicoGuard MG-420</h2>
+ <p>Un antifurto <strong>di fantasia</strong> a "dissuasione esperienziale": invece di far
+ suonare la sirena, quando due sensori confermano l'intrusione i diffusori nebulizzano le
+ cartucce <em>Spora Placida</em> e il ladro entra in uno stato di serenità contemplativa,
+ perdendo ogni interesse per la refurtiva. Ha centrale a 8 zone, diffusori a soffitto,
+ cartucce da sostituire, codici errore e una sirena che suona flauti e pioggia.</p>
+ <p>Fai finta di essere un tecnico al lavoro su un impianto. Puoi chiedere ad esempio:</p>
+ <ul>
+  <li>"La centrale MicoGuard mi dà errore E21, che faccio?"</li>
+  <li>"Come si sostituisce la cartuccia del diffusore?"</li>
+  <li>"Mandami la procedura su WhatsApp"</li>
+  <li>"Voglio parlare con un collega"</li>
+ </ul>
+</div>
 <form method="post" action="/chiamami">
  <label for="numero">Numero da chiamare</label>
  <select id="numero" name="numero">{options}</select>
