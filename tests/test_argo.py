@@ -342,12 +342,22 @@ def test_normalizzazione_numero():
     assert normalize_number("+39 333 1234567") == "+393331234567"
 
 
+def esito(client, data):
+    """Invia il modulo e restituisce il codice di esito del redirect (Post/Redirect/Get)."""
+    from urllib.parse import parse_qs, urlparse
+
+    r = client.post("/chiamami", data=data, follow_redirects=False)
+    assert r.status_code == 303
+    location = r.headers["location"]
+    assert location.endswith("#chiamami") and "333" not in location  # niente numero nell'URL
+    return parse_qs(urlparse(location).query)["esito"][0]
+
+
 def test_chiamami_codice_errato(monkeypatch):
     import httpx
 
     monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest_fail())
-    r = make_callback_client().post("/chiamami", data={"numero": "3331234567", "codice": "no"})
-    assert r.status_code == 403 and "codice di accesso" in r.text
+    assert esito(make_callback_client(), {"numero": "3331234567", "codice": "no"}) == "codice"
 
 
 def test_chiamami_solo_cellulari_italiani(monkeypatch):
@@ -356,8 +366,7 @@ def test_chiamami_solo_cellulari_italiani(monkeypatch):
     monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest_fail())
     client = make_callback_client()
     for numero in ["+44 7700 900123", "051 123456", "+39 899 123456", "abc"]:
-        r = client.post("/chiamami", data={"numero": numero, "codice": "segreta"})
-        assert r.status_code == 400, numero
+        assert esito(client, {"numero": numero, "codice": "segreta"}) == "numero", numero
 
 
 def fake_twilio(monkeypatch):
@@ -375,8 +384,9 @@ def fake_twilio(monkeypatch):
 
 def test_chiamami_avvia_chiamata(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
-    r = make_callback_client().post("/chiamami", data={"numero": "333 123 4567", "codice": "segreta"})
-    assert "Ti sto chiamando" in r.text
+    client = make_callback_client()
+    r = client.post("/chiamami", data={"numero": "333 123 4567", "codice": "segreta"})
+    assert "Ti sto chiamando" in r.text  # dopo il redirect
     url, data = chiamate[0]
     assert url.endswith("/Accounts/AC123/Calls.json")
     assert data["To"] == "+393331234567" and data["From"] == "+15550001111"
@@ -384,46 +394,57 @@ def test_chiamami_avvia_chiamata(monkeypatch):
     assert data["TimeLimit"] == "300"
 
 
+def test_ricaricare_la_pagina_non_richiama(monkeypatch):
+    chiamate = fake_twilio(monkeypatch)
+    client = make_callback_client()
+    assert esito(client, {"numero": "3331234567", "codice": "segreta"}) == "chiamata"
+    for _ in range(3):  # refresh della pagina di esito = GET, nessuna nuova chiamata
+        assert "Ti sto chiamando" in client.get("/?esito=chiamata").text
+    assert len(chiamate) == 1
+
+
 def test_chiamami_limiti(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
     client = make_callback_client(callback_max_per_hour=2, callback_cooldown_seconds=180)
     ok = {"codice": "segreta"}
-    assert client.post("/chiamami", data={**ok, "numero": "3331111111"}).status_code == 200
-    # stesso numero subito dopo: rifiutato
-    assert client.post("/chiamami", data={**ok, "numero": "3331111111"}).status_code == 429
-    assert client.post("/chiamami", data={**ok, "numero": "3332222222"}).status_code == 200
-    # limite orario raggiunto
-    assert client.post("/chiamami", data={**ok, "numero": "3333333333"}).status_code == 429
+    assert esito(client, {**ok, "numero": "3331111111"}) == "chiamata"
+    assert esito(client, {**ok, "numero": "3331111111"}) == "attendi"
+    assert esito(client, {**ok, "numero": "3332222222"}) == "chiamata"
+    assert esito(client, {**ok, "numero": "3333333333"}) == "limite"
     assert len(chiamate) == 2
 
 
 def test_chiamami_numero_extra_autorizzato(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
     client = make_callback_client(callback_numbers="+44 7700 900123")
-    r = client.post("/chiamami", data={"numero": "+447700900123", "codice": "segreta"})
-    assert r.status_code == 200 and chiamate[0][1]["To"] == "+447700900123"
+    assert esito(client, {"numero": "+447700900123", "codice": "segreta"}) == "chiamata"
+    assert chiamate[0][1]["To"] == "+447700900123"
 
 
 def test_chiamami_senza_codice(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
     client = make_callback_client(callback_password="")
     assert 'name="codice"' not in client.get("/").text
-    r = client.post("/chiamami", data={"numero": "333 123 4567"})
-    assert r.status_code == 200 and chiamate[0][1]["To"] == "+393331234567"
+    assert esito(client, {"numero": "333 123 4567"}) == "chiamata"
+    assert chiamate[0][1]["To"] == "+393331234567"
 
 
 def test_chiamami_disattivato(monkeypatch):
     monkeypatch.setattr("httpx.post", lambda *a, **k: pytest_fail())
     client = make_callback_client(callback_password="", callback_enabled=False)
-    assert client.post("/chiamami", data={"numero": "3331234567"}).status_code == 503
+    assert esito(client, {"numero": "3331234567"}) == "disattivato"
+
+
+def test_esito_sconosciuto_ignorato():
+    html = make_callback_client().get("/?esito=<script>").text
+    assert "<script>" not in html and 'class="msg' not in html
 
 
 def test_chiamami_senza_limiti_di_default(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
     client = make_callback_client()
     for _ in range(30):
-        r = client.post("/chiamami", data={"numero": "3331111111", "codice": "segreta"})
-        assert r.status_code == 200
+        assert esito(client, {"numero": "3331111111", "codice": "segreta"}) == "chiamata"
     assert len(chiamate) == 30
 
 

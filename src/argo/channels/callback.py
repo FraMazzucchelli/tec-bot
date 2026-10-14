@@ -89,9 +89,9 @@ class CallLimiter:
         now = time.time() if now is None else now
         self.calls = [(t, n) for t, n in self.calls if now - t < 3600]
         if any(n == number and now - t < self.per_number_seconds for t, n in self.calls):
-            return "Hai appena ricevuto una chiamata da ARGO: riprova tra qualche minuto."
+            return "attendi"
         if self.max_per_hour and len(self.calls) >= self.max_per_hour:
-            return "ARGO ha già fatto molte chiamate nell'ultima ora: riprova più tardi."
+            return "limite"
         return None
 
     def record(self, number: str, now: float | None = None) -> None:
@@ -107,9 +107,29 @@ def _limiter(request: Request) -> CallLimiter:
     return state.call_limiter
 
 
+# Esiti mostrati dopo l'invio del modulo. Dopo il POST la pagina fa un redirect
+# a "/?esito=..." (Post/Redirect/Get): ricaricare la pagina non rifà la chiamata.
+# Il numero non va mai nell'URL: è un dato personale.
+OUTCOMES = {
+    "chiamata": (True, "Ti sto chiamando: rispondi tra qualche secondo."),
+    "disattivato": (False, "Le chiamate di prova sono disattivate."),
+    "codice": (False, "Il codice di accesso non è corretto."),
+    "numero": (False, "Inserisci un cellulare italiano, ad esempio 333 123 4567."),
+    "attendi": (False, "Hai appena ricevuto una chiamata da ARGO: riprova tra qualche minuto."),
+    "limite": (False, "ARGO ha già fatto molte chiamate nell'ultima ora: riprova più tardi."),
+    "configurazione": (False, "Le chiamate di prova non sono configurate sul server."),
+    "errore": (False, "La chiamata non è partita. Controlla il numero e riprova."),
+}
+
+
+def _outcome(code: str) -> RedirectResponse:
+    return RedirectResponse(f"/?esito={code}#chiamami", status_code=303)
+
+
 @router.get("/", response_class=HTMLResponse)
-def landing(request: Request) -> HTMLResponse:
-    return _render(request.app.state.settings)
+def landing(request: Request, esito: str = "") -> HTMLResponse:
+    ok, message = OUTCOMES.get(esito, (False, ""))
+    return _render(request.app.state.settings, "", message, ok=ok)
 
 
 @router.get("/chiamami")
@@ -118,25 +138,25 @@ def old_link() -> RedirectResponse:
 
 
 @router.post("/chiamami")
-def callback_call(request: Request, numero: str = Form(""), codice: str = Form("")) -> HTMLResponse:
+def callback_call(request: Request, numero: str = Form(""), codice: str = Form("")) -> RedirectResponse:
     s = request.app.state.settings
     if not s.callback_enabled:
-        return _render(s, numero, "Le chiamate di prova sono disattivate.", status=503)
+        return _outcome("disattivato")
     # codice di accesso richiesto solo se CALLBACK_PASSWORD è impostata
     if s.callback_password and not hmac.compare_digest(codice.encode(), s.callback_password.encode()):
         log.warning("Fatti chiamare: codice di accesso errato")
-        return _render(s, numero, "Il codice di accesso non è corretto.", status=403)
+        return _outcome("codice")
 
     number = normalize_number(numero)
     if not (ITALIAN_MOBILE.match(number) or number in _extra_numbers(s)):
-        return _render(s, numero, "Inserisci un cellulare italiano, ad esempio 333 123 4567.", status=400)
+        return _outcome("numero")
 
     limiter = _limiter(request)
     if (problem := limiter.check(number)) is not None:
-        return _render(s, numero, problem, status=429)
+        return _outcome(problem)
 
     if not (s.twilio_account_sid and s.twilio_auth_token and s.twilio_voice_from):
-        return _render(s, numero, "Le chiamate di prova non sono configurate sul server.", status=503)
+        return _outcome("configurazione")
 
     try:
         response = httpx.post(
@@ -160,8 +180,8 @@ def callback_call(request: Request, numero: str = Form(""), codice: str = Form("
             except ValueError:
                 detail = exc.response.text[:200]
         log.error("Fatti chiamare: Twilio ha rifiutato la chiamata: %s", detail or exc)
-        return _render(s, numero, "La chiamata non è partita. Controlla il numero e riprova.", status=502)
+        return _outcome("errore")
 
     limiter.record(number)
     log.info("Fatti chiamare: chiamata avviata verso %s****", number[:-4])
-    return _render(s, "", "Ti sto chiamando: rispondi tra qualche secondo.", ok=True)
+    return _outcome("chiamata")
