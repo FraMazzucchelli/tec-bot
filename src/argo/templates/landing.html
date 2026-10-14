@@ -5,9 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ARGO – l'assistente al telefono per i tecnici</title>
 <meta name="description" content="ARGO risponde al telefono ai tecnici sul campo: cerca nei manuali, manda la procedura su WhatsApp, apre i ticket e passa la chiamata a un collega.">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --wall: #E4E6E1;      /* intonaco */
@@ -19,8 +16,9 @@
     --yellow: #DDA20A;    /* filo giallo */
     --green: #2C7449;     /* filo verde */
     --call: #20272C;
-    --display: "Archivo", "Arial Narrow", sans-serif;
-    --text: "Atkinson Hyperlegible", system-ui, sans-serif;
+    /* solo font di sistema: nessuna risorsa da server terzi (GDPR) */
+    --display: "Arial Narrow", "Roboto Condensed", "Helvetica Neue", system-ui, sans-serif;
+    --text: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
@@ -157,6 +155,8 @@
   form .hint { display: block; font-size: .88rem; color: #A6AEA8; margin-top: 6px; }
   form .button { width: 100%; background: var(--yellow); color: var(--graphite); font-size: 1.15rem; padding: 18px; }
   form .button:hover { background: #F0B51A; }
+  .privacy { margin: 14px 0 0; font-size: .85rem; color: #A6AEA8; }
+  .privacy a { color: #E4E6E1; }
   .msg { margin-top: 18px; padding: 14px 16px; border-radius: 8px; font-weight: 700; }
   .msg.ok { background: #D9F4C7; color: #17301F; }
   .msg.err { background: #F6D6D2; color: #5E1A13; }
@@ -279,6 +279,7 @@
         </div>
         {{CAMPO_CODICE}}
         <button class="button" type="submit">Chiamami</button>
+        <p class="privacy">{{PRIVACY}}</p>
         {{MESSAGGIO}}
       </form>
     </section>

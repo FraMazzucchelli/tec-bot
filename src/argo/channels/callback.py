@@ -68,11 +68,21 @@ def _render(
         kind = "ok" if ok else "err"
         box = f'<div class="msg {kind}" role="status">{escape(message)}</div>'
     needs_code = bool(settings.callback_password)
+    company = escape(getattr(settings, "company_name", "") or "il titolare del servizio")
+    privacy = (
+        f"Il numero viene usato da {company} solo per questa chiamata e, se lo chiedi, "
+        "per mandarti informazioni su WhatsApp. Risponde un assistente automatico."
+    )
+    policy_url = getattr(settings, "privacy_policy_url", "")
+    if policy_url:
+        link = escape(policy_url, quote=True)
+        privacy += f' <a href="{link}">Informativa privacy</a>'
     html = (
         TEMPLATE.replace("{{NUMERO}}", escape(numero, quote=True))
         .replace("{{MESSAGGIO}}", box)
         .replace("{{CAMPO_CODICE}}", CODE_FIELD if needs_code else "")
         .replace("{{INTRO_MODULO}}", INTRO_WITH_CODE if needs_code else INTRO_OPEN)
+        .replace("{{PRIVACY}}", privacy)
     )
     return HTMLResponse(html, status_code=status)
 

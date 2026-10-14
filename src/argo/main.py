@@ -8,13 +8,14 @@ from .assistant import Assistant
 from .channels import callback, chat, voice
 from .config import Settings, get_settings
 from .knowledge import KnowledgeBase
+from .logging_privacy import install as install_logging
 from .messaging import TwilioWhatsApp
 from .tickets import JiraTicketService
 
 
 def create_app(settings: Settings | None = None, assistant: Assistant | None = None) -> FastAPI:
     settings = settings or get_settings()
-    logging.basicConfig(level=logging.INFO)
+    install_logging(logging.INFO)
 
     if assistant is None:
         knowledge = KnowledgeBase.from_dir(settings.manuals_dir)

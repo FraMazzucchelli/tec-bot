@@ -44,7 +44,8 @@ def _say_and_listen(request: Request, text: str) -> Response:
 def incoming(request: Request) -> Response:
     return _say_and_listen(
         request,
-        f"Ciao, sono {request.app.state.settings.spoken_name}. "
+        f"Ciao, sono {request.app.state.settings.spoken_name}, "
+        "l'assistente automatico dell'assistenza tecnica. "
         "Se vuoi parlare con un collega dimmelo in qualsiasi momento. Qual è il problema?",
     )
 

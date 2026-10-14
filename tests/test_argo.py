@@ -503,3 +503,41 @@ def pytest_fail():
 def test_health():
     client, _ = make_client([])
     assert client.get("/health").json()["status"] == "ok"
+
+
+# --- privacy / GDPR ---
+
+
+def test_numeri_mascherati_nei_log():
+    import logging
+
+    from argo.logging_privacy import MaskingFormatter, mask_phones
+
+    assert mask_phones("To +393331234567 non valido") == "To +39******* non valido"
+    record = logging.LogRecord("x", logging.ERROR, "f", 1, "sessione whatsapp:%s", ("+393331234567",), None)
+    assert "1234567" not in MaskingFormatter("%(message)s").format(record)
+
+
+def test_conversazioni_inattive_cancellate():
+    import argo.assistant as mod
+
+    claude = FakeClaude([([text_block("ok")], "end_turn")] * 2)
+    assistant = Assistant(claude, "m", kb(), None)
+    assistant.reply("vecchia", "ciao", "telegram", phone="+39333")
+    assistant._last_seen["vecchia"] -= mod.SESSION_TTL_SECONDS + 1
+    assistant.reply("nuova", "ciao", "telegram")
+    assert "vecchia" not in assistant._history and "vecchia" not in assistant._phones
+
+
+def test_pagina_senza_risorse_esterne_e_con_informativa():
+    client = make_callback_client(privacy_policy_url="https://example.com/privacy", company_name="ACME")
+    html = client.get("/").text
+    assert "googleapis" not in html and "gstatic" not in html
+    assert "usato da ACME solo per questa chiamata" in html
+    assert 'href="https://example.com/privacy"' in html
+
+
+def test_saluto_dichiara_assistente_automatico():
+    client, _ = make_client([])
+    r = post_twilio(client, "/voice/incoming", {"CallSid": "CA1", "From": "+39333"})
+    assert "assistente automatico" in r.text
