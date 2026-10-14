@@ -34,6 +34,21 @@ pytest
 
 Per ricevere i webhook in locale esponi la porta con un tunnel (es. `ngrok http 8000`).
 
+## Messa online (Railway)
+
+I tecnici non installano nulla: ARGO gira su un server e loro chiamano un numero
+o scrivono al bot. Il repo contiene un `Dockerfile` pronto.
+
+1. Su [railway.com](https://railway.com) → *New Project* → *Deploy from GitHub repo* → `tec-bot`.
+2. In *Variables* inserisci le variabili di `.env.example` (almeno `ANTHROPIC_API_KEY`,
+   `TWILIO_AUTH_TOKEN`, `PUBLIC_BASE_URL`).
+3. In *Settings → Networking* genera un dominio pubblico e mettilo in `PUBLIC_BASE_URL`
+   (es. `https://tec-bot-production.up.railway.app`, senza `/` finale).
+4. Controlla che `https://<dominio>/health` risponda `{"status":"ok",...}`.
+
+Evita i piani che "addormentano" il server quando è inattivo: Twilio aspetta circa
+15 secondi e una chiamata durante il risveglio fallisce.
+
 ## Collegare i canali
 
 | Canale | Dove si configura | Webhook |

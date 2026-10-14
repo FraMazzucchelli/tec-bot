@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""
+    # Voce sintetica per le chiamate (Amazon Polly via Twilio).
+    # Alternative italiane: Polly.Adriano-Neural, Polly.Bianca, Polly.Carla, Polly.Giorgio
+    twilio_voice: str = "Polly.Bianca-Neural"
 
     public_base_url: str = ""
 
