@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,6 +41,17 @@ class Settings(BaseSettings):
 
     # Solo per prove in locale senza Twilio/Telegram: MAI true in produzione
     skip_signature_check: bool = False
+
+
+    @field_validator("public_base_url")
+    @classmethod
+    def _normalize_url(cls, value: str) -> str:
+        """Accetta anche 'dominio.app' o 'https://dominio.app/': la firma Twilio
+        richiede esattamente https://dominio senza barra finale."""
+        value = value.strip().rstrip("/")
+        if value and not value.startswith(("http://", "https://")):
+            value = "https://" + value
+        return value
 
 
 @lru_cache
