@@ -1,110 +1,130 @@
-"""Pagina "Chiamami": ARGO telefona a un numero autorizzato.
+"""Pagina di presentazione di ARGO con il modulo "Fatti chiamare".
 
-Utile quando chi prova ARGO non può chiamare il numero Twilio (es. operatore che
-blocca le chiamate internazionali): la chiamata parte da Twilio verso il tecnico,
-che la riceve gratis, e segue lo stesso flusso di /voice/incoming.
+Chi prova ARGO inserisce il proprio cellulare e il codice di accesso: Twilio lo
+chiama dal numero USA e la chiamata segue lo stesso flusso di /voice/incoming.
+Per il tecnico è una chiamata in arrivo, quindi gratuita.
 
-Protezioni: password (CALLBACK_PASSWORD) e solo numeri in CALLBACK_NUMBERS, così
-nessuno può usare la pagina per far chiamare numeri a caso a spese del credito.
+Protezioni contro abusi e spese impreviste:
+- codice di accesso obbligatorio (CALLBACK_PASSWORD);
+- solo cellulari italiani (+39 3...), più eventuali numeri in CALLBACK_NUMBERS;
+- al massimo una chiamata ogni 3 minuti per numero e CALLBACK_MAX_PER_HOUR in totale;
+- ogni chiamata si chiude dopo 5 minuti (TimeLimit di Twilio).
 """
+
+from __future__ import annotations
 
 import hmac
 import logging
+import re
+import time
 from html import escape
+from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Form, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-PAGE = """<!doctype html>
-<html lang="it"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ARGO – Chiamami</title>
-<style>
- body{{font-family:system-ui,sans-serif;max-width:420px;margin:40px auto;padding:0 16px;color:#1b1b1b;background:#fafafa}}
- h1{{font-size:1.4rem}} label{{display:block;margin:14px 0 4px}}
- input,select,button{{width:100%;padding:10px;font-size:1rem;box-sizing:border-box;border:1px solid #bbb;border-radius:8px}}
- button{{margin-top:18px;background:#1f5eff;color:#fff;border:none;cursor:pointer}}
- .msg{{margin-top:18px;padding:10px;border-radius:8px;background:#eef3ff}}
- .demo{{margin:18px 0;padding:12px 14px;border-radius:8px;background:#f1f7ee;border:1px solid #cfe3c6;font-size:.95rem}}
- .demo h2{{font-size:1.05rem;margin:0 0 6px}} .demo ul{{margin:6px 0 0;padding-left:18px}}
-</style></head><body>
-<h1>ARGO – Chiamami</h1>
-<p>ARGO ti telefona e parli con l'assistente come se avessi chiamato tu.</p>
-<div class="demo">
- <h2>Il sistema di prova: MicoGuard MG-420</h2>
- <p>Un antifurto <strong>di fantasia</strong> a "dissuasione esperienziale": invece di far
- suonare la sirena, quando due sensori confermano l'intrusione i diffusori nebulizzano le
- cartucce <em>Spora Placida</em> e il ladro entra in uno stato di serenità contemplativa,
- perdendo ogni interesse per la refurtiva. Ha centrale a 8 zone, diffusori a soffitto,
- cartucce da sostituire, codici errore e una sirena che suona flauti e pioggia.</p>
- <p>Fai finta di essere un tecnico al lavoro su un impianto. Puoi chiedere ad esempio:</p>
- <ul>
-  <li>"La centrale MicoGuard mi dà errore E21, che faccio?"</li>
-  <li>"Come si sostituisce la cartuccia del diffusore?"</li>
-  <li>"Mandami la procedura su WhatsApp"</li>
-  <li>"Voglio parlare con un collega"</li>
- </ul>
-</div>
-<form method="post" action="/chiamami">
- <label for="numero">Numero da chiamare</label>
- <select id="numero" name="numero">{options}</select>
- <label for="password">Password</label>
- <input id="password" name="password" type="password" autocomplete="current-password" required>
- <button type="submit">Chiamami</button>
-</form>
-{message}
-</body></html>"""
+TEMPLATE = (Path(__file__).resolve().parent.parent / "templates" / "landing.html").read_text(
+    encoding="utf-8"
+)
+ITALIAN_MOBILE = re.compile(r"^\+393\d{8,9}$")
+PER_NUMBER_SECONDS = 180
+CALL_TIME_LIMIT_SECONDS = 300
 
 
-def _allowed_numbers(settings) -> list[str]:
-    raw = settings.callback_numbers or settings.human_support_number
-    return [n.strip() for n in raw.split(",") if n.strip()]
+def normalize_number(raw: str) -> str:
+    """'333 123 4567', '0039 333…', '+39 333-123…' → '+393331234567'."""
+    digits = re.sub(r"[^\d+]", "", raw.strip())
+    if digits.startswith("00"):
+        digits = "+" + digits[2:]
+    if not digits.startswith("+"):
+        digits = "+39" + digits
+    return digits
 
 
-def _page(settings, message: str = "") -> HTMLResponse:
-    options = "".join(
-        f'<option value="{escape(n)}">{escape(n[:-4] + "****")}</option>'
-        for n in _allowed_numbers(settings)
-    )
-    box = f'<div class="msg">{escape(message)}</div>' if message else ""
-    return HTMLResponse(PAGE.format(options=options, message=box))
+def _extra_numbers(settings) -> set[str]:
+    return {normalize_number(n) for n in settings.callback_numbers.split(",") if n.strip()}
+
+
+def _render(numero: str = "", message: str = "", ok: bool = False, status: int = 200) -> HTMLResponse:
+    box = ""
+    if message:
+        kind = "ok" if ok else "err"
+        box = f'<div class="msg {kind}" role="status">{escape(message)}</div>'
+    html = TEMPLATE.replace("{{NUMERO}}", escape(numero, quote=True)).replace("{{MESSAGGIO}}", box)
+    return HTMLResponse(html, status_code=status)
+
+
+class CallLimiter:
+    """Limiti in memoria: bastano per un solo server (si azzerano al riavvio)."""
+
+    def __init__(self, per_number_seconds: int, max_per_hour: int):
+        self.per_number_seconds = per_number_seconds
+        self.max_per_hour = max_per_hour
+        self.calls: list[tuple[float, str]] = []
+
+    def check(self, number: str, now: float | None = None) -> str | None:
+        now = time.time() if now is None else now
+        self.calls = [(t, n) for t, n in self.calls if now - t < 3600]
+        if any(n == number and now - t < self.per_number_seconds for t, n in self.calls):
+            return "Hai appena ricevuto una chiamata da ARGO: riprova tra qualche minuto."
+        if len(self.calls) >= self.max_per_hour:
+            return "ARGO ha già fatto molte chiamate nell'ultima ora: riprova più tardi."
+        return None
+
+    def record(self, number: str, now: float | None = None) -> None:
+        self.calls.append((time.time() if now is None else now, number))
+
+
+def _limiter(request: Request) -> CallLimiter:
+    state = request.app.state
+    if not hasattr(state, "call_limiter"):
+        state.call_limiter = CallLimiter(PER_NUMBER_SECONDS, state.settings.callback_max_per_hour)
+    return state.call_limiter
+
+
+@router.get("/", response_class=HTMLResponse)
+def landing() -> HTMLResponse:
+    return _render()
 
 
 @router.get("/chiamami")
-def callback_form(request: Request) -> HTMLResponse:
-    settings = request.app.state.settings
-    if not settings.callback_password:
-        return HTMLResponse("Funzione non attiva (manca CALLBACK_PASSWORD).", status_code=404)
-    return _page(settings)
+def old_link() -> RedirectResponse:
+    return RedirectResponse("/#chiamami", status_code=307)
 
 
 @router.post("/chiamami")
-def callback_call(
-    request: Request, numero: str = Form(""), password: str = Form("")
-) -> HTMLResponse:
+def callback_call(request: Request, numero: str = Form(""), codice: str = Form("")) -> HTMLResponse:
     s = request.app.state.settings
     if not s.callback_password:
-        return HTMLResponse("Funzione non attiva.", status_code=404)
-    if not hmac.compare_digest(password, s.callback_password):
-        log.warning("Chiamami: password errata")
-        return _page(s, "Password errata.")
-    if numero not in _allowed_numbers(s):
-        return _page(s, "Numero non autorizzato.")
+        return _render(numero, "Le chiamate di prova non sono ancora attive.", status=503)
+    if not hmac.compare_digest(codice.encode(), s.callback_password.encode()):
+        log.warning("Fatti chiamare: codice di accesso errato")
+        return _render(numero, "Il codice di accesso non è corretto.", status=403)
+
+    number = normalize_number(numero)
+    if not (ITALIAN_MOBILE.match(number) or number in _extra_numbers(s)):
+        return _render(numero, "Inserisci un cellulare italiano, ad esempio 333 123 4567.", status=400)
+
+    limiter = _limiter(request)
+    if (problem := limiter.check(number)) is not None:
+        return _render(numero, problem, status=429)
+
     if not (s.twilio_account_sid and s.twilio_auth_token and s.twilio_voice_from):
-        return _page(s, "Twilio non configurato (manca TWILIO_VOICE_FROM o le credenziali).")
+        return _render(numero, "Le chiamate di prova non sono configurate sul server.", status=503)
 
     try:
         response = httpx.post(
             f"https://api.twilio.com/2010-04-01/Accounts/{s.twilio_account_sid}/Calls.json",
             data={
-                "To": numero,
+                "To": number,
                 "From": s.twilio_voice_from,
-                "Url": s.public_base_url.rstrip("/") + "/voice/incoming",
+                "Url": s.public_base_url + "/voice/incoming",
                 "Method": "POST",
+                "TimeLimit": str(CALL_TIME_LIMIT_SECONDS),
             },
             auth=(s.twilio_account_sid, s.twilio_auth_token),
             timeout=15,
@@ -117,7 +137,9 @@ def callback_call(
                 detail = exc.response.json().get("message", "")
             except ValueError:
                 detail = exc.response.text[:200]
-        log.exception("Chiamami: errore Twilio %s", detail)
-        return _page(s, f"Twilio ha rifiutato la chiamata. {detail}".strip())
+        log.error("Fatti chiamare: Twilio ha rifiutato la chiamata: %s", detail or exc)
+        return _render(numero, "La chiamata non è partita. Controlla il numero e riprova.", status=502)
 
-    return _page(s, "Ti sto chiamando: rispondi tra qualche secondo.")
+    limiter.record(number)
+    log.info("Fatti chiamare: chiamata avviata verso %s****", number[:-4])
+    return _render("", "Ti sto chiamando: rispondi tra qualche secondo.", ok=True)

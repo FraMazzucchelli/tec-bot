@@ -110,6 +110,19 @@ riporta quante sezioni ha caricato. `manuals/esempio-centrale.md` è solo un ese
 documentazione interna o manuali dei produttori rendi il repo privato
 (GitHub → *Settings → General → Danger Zone → Change visibility*).
 
+## Pagina di presentazione e "Fatti chiamare"
+
+`https://<dominio>/` è la pagina che presenta ARGO. In fondo c'è il modulo **Fatti chiamare**:
+chi prova ARGO inserisce il proprio cellulare e il codice di accesso, e Twilio lo chiama dal
+numero USA (per lui è una chiamata in arrivo, gratuita). Utile anche quando l'operatore
+telefonico blocca le chiamate verso gli USA. Il vecchio indirizzo `/chiamami` porta qui.
+
+Variabili: `TWILIO_VOICE_FROM` (il numero Twilio, es. `+16812562315`) e `CALLBACK_PASSWORD`
+(il codice di accesso da dare a chi deve provare). Protezioni:
+- solo cellulari italiani (`+39 3…`); altri numeri vanno elencati in `CALLBACK_NUMBERS`, separati da virgola;
+- una chiamata ogni 3 minuti per numero e al massimo `CALLBACK_MAX_PER_HOUR` (predefinito 20) in totale;
+- ogni chiamata si chiude dopo 5 minuti.
+
 ## Manuale su WhatsApp durante la chiamata
 
 Al telefono il tecnico può chiedere "mandamela su WhatsApp": ARGO invia al numero

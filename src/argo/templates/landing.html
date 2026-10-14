@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ARGO – l'assistente al telefono per i tecnici</title>
+<meta name="description" content="ARGO risponde al telefono ai tecnici sul campo: cerca nei manuali, manda la procedura su WhatsApp, apre i ticket e passa la chiamata a un collega.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --wall: #E4E6E1;      /* intonaco */
+    --panel: #F4F5F2;
+    --graphite: #1D2226;  /* filo nero / testo */
+    --muted: #535A60;
+    --line: #C5C9C1;
+    --red: #B9352A;       /* filo rosso */
+    --yellow: #DDA20A;    /* filo giallo */
+    --green: #2C7449;     /* filo verde */
+    --call: #20272C;
+    --display: "Archivo", "Arial Narrow", sans-serif;
+    --text: "Atkinson Hyperlegible", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--wall);
+    color: var(--graphite);
+    font: 400 1.0625rem/1.6 var(--text);
+  }
+  a { color: inherit; }
+  :focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* Fascio di cavi in testa alla pagina */
+  .bundle { display: grid; gap: 3px; padding-top: 0; }
+  .bundle span { display: block; height: 4px; }
+  .bundle span:nth-child(1) { background: var(--red); }
+  .bundle span:nth-child(2) { background: var(--graphite); }
+  .bundle span:nth-child(3) { background: var(--yellow); }
+  .bundle span:nth-child(4) { background: var(--green); }
+
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 0;
+  }
+  .wordmark {
+    font: 800 1.5rem/1 var(--display);
+    font-stretch: 125%;
+    letter-spacing: .02em;
+    text-decoration: none;
+  }
+  .top a.cta-small {
+    font-weight: 700; text-decoration: none;
+    padding: 9px 16px; border: 2px solid var(--graphite); border-radius: 6px;
+  }
+  .top a.cta-small:hover { background: var(--graphite); color: var(--wall); }
+
+  /* Hero */
+  .hero {
+    display: grid; grid-template-columns: 1.05fr 1fr; gap: 56px;
+    align-items: center; padding: 40px 0 88px;
+  }
+  .hero h1 {
+    font: 800 clamp(2.6rem, 6.2vw, 4.6rem)/0.98 var(--display);
+    font-stretch: 72%;
+    letter-spacing: -.01em;
+    margin: 0 0 24px;
+  }
+  .hero p.lead { font-size: 1.2rem; max-width: 34em; margin: 0 0 32px; color: var(--graphite); }
+  .button {
+    display: inline-block; font: 700 1.05rem/1 var(--text);
+    background: var(--graphite); color: var(--wall);
+    padding: 16px 26px; border: 0; border-radius: 6px; text-decoration: none; cursor: pointer;
+  }
+  .button:hover { background: #000; }
+  .hero .note { margin-top: 14px; font-size: .95rem; color: var(--muted); }
+
+  /* Trascrizione della chiamata */
+  .call {
+    background: var(--call); color: #E8EBE6; border-radius: 14px;
+    padding: 22px 22px 26px; box-shadow: 0 24px 48px -28px rgba(29,34,38,.6);
+  }
+  .call-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    border-bottom: 1px solid #39424A; padding-bottom: 12px; margin-bottom: 16px;
+    font-size: .92rem; color: #AEB6B0;
+  }
+  .call-head strong { color: #fff; font: 700 1.05rem/1.2 var(--display); font-stretch: 100%; }
+  .live { display: inline-flex; align-items: center; gap: 8px; }
+  .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: #4CC27A; }
+  .turn { margin: 0 0 14px; max-width: 92%; opacity: 0; animation: appear .5s ease forwards; }
+  .turn .who { display: block; font-size: .8rem; color: #9AA39D; margin-bottom: 2px; }
+  .turn p { margin: 0; padding: 10px 13px; border-radius: 10px; line-height: 1.45; }
+  .tech p { background: #2E373D; }
+  .argo { margin-left: auto; }
+  .argo p { background: #E8EBE6; color: var(--graphite); }
+  .argo .src { display: block; margin-top: 6px; font-size: .82rem; color: var(--green); font-weight: 700; }
+  .wa { margin: 6px 0 0 auto; max-width: 86%; opacity: 0; animation: appear .5s ease forwards; }
+  .wa p {
+    margin: 0; background: #D9F4C7; color: #17301F; border-radius: 10px 10px 2px 10px;
+    padding: 10px 13px; font-size: .93rem; line-height: 1.45;
+  }
+  .wa .who { display: block; text-align: right; font-size: .8rem; color: #9AA39D; margin-bottom: 2px; }
+  .t1 { animation-delay: .3s; } .t2 { animation-delay: 1.3s; } .t3 { animation-delay: 2.5s; }
+  .t4 { animation-delay: 3.4s; } .t5 { animation-delay: 4.3s; }
+  @keyframes appear { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* Sezioni */
+  section.block { padding: 72px 0; border-top: 1px solid var(--line); }
+  h2 {
+    font: 800 clamp(1.9rem, 3.6vw, 2.6rem)/1.05 var(--display);
+    font-stretch: 80%; margin: 0 0 14px;
+  }
+  .intro { max-width: 40em; color: var(--muted); margin: 0 0 40px; }
+
+  /* Funzioni: una per colore di filo */
+  .wires { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 36px 56px; }
+  .wires li { display: grid; grid-template-columns: 44px 1fr; gap: 0 18px; }
+  .tag {
+    grid-row: span 2; width: 44px; height: 64px; border-radius: 6px; position: relative;
+  }
+  .tag::after { /* il filo che esce dalla fascetta */
+    content: ""; position: absolute; left: 50%; top: 64px; width: 4px; height: 40px;
+    transform: translateX(-50%); background: inherit; opacity: .35;
+  }
+  .wires h3 { font: 700 1.3rem/1.2 var(--display); font-stretch: 100%; margin: 4px 0 6px; }
+  .wires p { margin: 0; color: var(--muted); }
+  .c-green { background: var(--green); } .c-yellow { background: var(--yellow); }
+  .c-red { background: var(--red); } .c-black { background: var(--graphite); }
+  .wires-note { margin-top: 40px; font-size: .95rem; color: var(--muted); }
+
+  /* Sistema di prova */
+  .demo { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: start; }
+  .demo p { max-width: 36em; }
+  .fake { display: inline-block; font-weight: 700; color: var(--red); }
+  .asks { list-style: none; padding: 0; margin: 0; border-left: 4px solid var(--yellow); }
+  .asks li { padding: 12px 0 12px 20px; font-size: 1.12rem; border-bottom: 1px solid var(--line); }
+  .asks li:last-child { border-bottom: 0; }
+
+  /* Modulo */
+  .callme {
+    background: var(--graphite); color: var(--wall);
+    border-radius: 16px; padding: 48px; margin: 0 0 72px;
+    display: grid; grid-template-columns: 1fr 1fr; gap: 48px;
+  }
+  .callme h2 { color: #fff; }
+  .callme .intro { color: #B9C0BA; margin-bottom: 0; }
+  .callme ul.facts { padding-left: 18px; color: #B9C0BA; margin: 18px 0 0; }
+  form label { display: block; font-weight: 700; margin: 0 0 6px; }
+  form .field { margin-bottom: 18px; }
+  form input {
+    width: 100%; font: 400 1.1rem/1.2 var(--text); padding: 14px;
+    border: 2px solid #4A535A; border-radius: 8px; background: #FFF; color: var(--graphite);
+  }
+  form .hint { display: block; font-size: .88rem; color: #A6AEA8; margin-top: 6px; }
+  form .button { width: 100%; background: var(--yellow); color: var(--graphite); font-size: 1.15rem; padding: 18px; }
+  form .button:hover { background: #F0B51A; }
+  .msg { margin-top: 18px; padding: 14px 16px; border-radius: 8px; font-weight: 700; }
+  .msg.ok { background: #D9F4C7; color: #17301F; }
+  .msg.err { background: #F6D6D2; color: #5E1A13; }
+
+  footer { padding: 0 0 40px; font-size: .9rem; color: var(--muted); }
+
+  @media (max-width: 860px) {
+    .hero, .demo, .callme { grid-template-columns: 1fr; gap: 36px; }
+    .hero { padding-top: 16px; }
+    .wires { grid-template-columns: 1fr; }
+    .callme { padding: 32px 22px; }
+  }
+  @media (max-width: 420px) {
+    .wrap { padding: 0 16px; }
+    .top a.cta-small { padding: 8px 12px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    .turn, .wa { animation: none; opacity: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="bundle" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+
+<div class="wrap">
+  <header class="top">
+    <a class="wordmark" href="/">ARGO</a>
+    <a class="cta-small" href="#chiamami">Fatti chiamare</a>
+  </header>
+
+  <main>
+    <div class="hero">
+      <div>
+        <h1>Un collega al telefono, con tutti i manuali in testa.</h1>
+        <p class="lead">ARGO è l'assistente vocale dell'assistenza tecnica. Lo chiami dal cantiere,
+        gli descrivi il problema e ti risponde citando il manuale. Se non basta, apre il ticket
+        o ti passa una persona.</p>
+        <a class="button" href="#chiamami">Fatti chiamare da ARGO</a>
+        <p class="note">Ti chiama lui: inserisci il tuo numero in fondo alla pagina.</p>
+      </div>
+
+      <div class="call" role="img" aria-label="Esempio di telefonata tra un tecnico e ARGO">
+        <div class="call-head">
+          <strong>ARGO</strong>
+          <span class="live">in chiamata 00:47</span>
+        </div>
+        <div class="turn tech t1"><span class="who">Tecnico</span>
+          <p>Sono sulla scala alla villa Bertolini, la centrale MicoGuard dà errore E21.</p></div>
+        <div class="turn argo t2"><span class="who">ARGO</span>
+          <p>E21 significa che il locale della centrale supera i 40 gradi. Apri o ventila il locale e l'errore rientra.
+          <span class="src">Manuale MG-420, codici errore</span></p></div>
+        <div class="turn tech t3"><span class="who">Tecnico</span>
+          <p>Ok. Già che ci sono, come cambio la cartuccia del diffusore?</p></div>
+        <div class="turn argo t4"><span class="who">ARGO</span>
+          <p>Sono sei passaggi: te li mando su WhatsApp, così li segui con le mani libere.</p></div>
+        <div class="wa t5"><span class="who">WhatsApp</span>
+          <p>📘 3.4 Inserimento della cartuccia Spora Placida SP-1<br>1. Togliere tensione al diffusore dal menu tecnico…</p></div>
+      </div>
+    </div>
+
+    <section class="block" aria-labelledby="cosa">
+      <h2 id="cosa">Cosa fa ARGO</h2>
+      <p class="intro">Risponde a voce, in italiano, a chi sta lavorando su un impianto di sicurezza.
+      Parla solo di lavoro: alle domande fuori tema riporta gentilmente il discorso sull'impianto.</p>
+      <ul class="wires">
+        <li><span class="tag c-green" aria-hidden="true"></span>
+          <h3>Risponde dai manuali</h3>
+          <p>Cerca nei manuali tecnici e cita sezione e pagina. Se un valore non c'è, non lo inventa.</p></li>
+        <li><span class="tag c-yellow" aria-hidden="true"></span>
+          <h3>Ti manda la procedura</h3>
+          <p>Su richiesta invia su WhatsApp la sezione del manuale, da seguire passo passo.</p></li>
+        <li><span class="tag c-red" aria-hidden="true"></span>
+          <h3>Apre il ticket</h3>
+          <p>Raccoglie impianto, modello, sintomo e prove già fatte, poi apre il ticket per i colleghi.</p></li>
+        <li><span class="tag c-black" aria-hidden="true"></span>
+          <h3>Ti passa un collega</h3>
+          <p>Se chiedi una persona, o la situazione è urgente, trasferisce la chiamata al supporto.</p></li>
+      </ul>
+      <p class="wires-note">Quattro colori come i fili di un diffusore: verde stato, giallo comando, rosso alimentazione, nero massa.</p>
+    </section>
+
+    <section class="block" aria-labelledby="demo">
+      <div class="demo">
+        <div>
+          <h2 id="demo">Il sistema di prova: MicoGuard MG-420</h2>
+          <p><span class="fake">È un antifurto di fantasia.</span> Lo abbiamo inventato per mettere alla prova ARGO
+          con un manuale vero e proprio, codici errore compresi.</p>
+          <p>Invece di far suonare la sirena, quando due sensori confermano l'intrusione i diffusori a soffitto
+          nebulizzano le cartucce Spora Placida: il ladro entra in uno stato di serenità contemplativa e perde
+          ogni interesse per la refurtiva. Ha una centrale a 8 zone, cartucce da sostituire ogni tre attivazioni
+          e una sirena opzionale che suona flauti e pioggia.</p>
+        </div>
+        <div>
+          <p><strong>Fingiti un tecnico al lavoro e chiedi, ad esempio:</strong></p>
+          <ul class="asks">
+            <li>"La centrale MicoGuard mi dà errore E21, che faccio?"</li>
+            <li>"Come si sostituisce la cartuccia del diffusore?"</li>
+            <li>"Mandami la procedura su WhatsApp."</li>
+            <li>"Voglio parlare con un collega."</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="callme" id="chiamami" aria-labelledby="titolo-chiamami">
+      <div>
+        <h2 id="titolo-chiamami">Fatti chiamare da ARGO</h2>
+        <p class="intro">Inserisci il tuo cellulare e il codice di accesso che ti hanno dato: dopo pochi secondi
+        ARGO ti telefona.</p>
+        <ul class="facts">
+          <li>Ti chiama un numero americano (+1 681…): rispondi pure, per te è gratuita.</li>
+          <li>La chiamata dura al massimo 5 minuti.</li>
+          <li>Il numero serve solo a chiamarti e, se lo chiedi, a mandarti la procedura su WhatsApp.</li>
+        </ul>
+      </div>
+      <form method="post" action="/chiamami#chiamami">
+        <div class="field">
+          <label for="numero">Il tuo cellulare</label>
+          <input id="numero" name="numero" type="tel" inputmode="tel" autocomplete="tel"
+                 placeholder="333 123 4567" value="{{NUMERO}}" required>
+          <span class="hint">Solo numeri italiani.</span>
+        </div>
+        <div class="field">
+          <label for="codice">Codice di accesso</label>
+          <input id="codice" name="codice" type="password" autocomplete="off" required>
+        </div>
+        <button class="button" type="submit">Chiamami</button>
+        {{MESSAGGIO}}
+      </form>
+    </section>
+  </main>
+
+  <footer>
+    ARGO è un prototipo. Le risposte si basano sui manuali caricati; per interventi su impianti reali
+    vale sempre la documentazione del produttore.
+  </footer>
+</div>
+</body>
+</html>

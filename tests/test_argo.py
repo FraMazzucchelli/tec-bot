@@ -325,25 +325,40 @@ def make_callback_client(**extra):
     return TestClient(create_app(settings, Assistant(FakeClaude([]), "m", kb(), None)))
 
 
-def test_chiamami_password_errata(monkeypatch):
+def test_pagina_di_presentazione():
+    client = make_callback_client()
+    r = client.get("/")
+    assert r.status_code == 200 and "Fatti chiamare da ARGO" in r.text
+    assert client.get("/chiamami", follow_redirects=False).headers["location"] == "/#chiamami"
+
+
+def test_normalizzazione_numero():
+    from argo.channels.callback import normalize_number
+
+    assert normalize_number("333 123 4567") == "+393331234567"
+    assert normalize_number("0039 333-123-4567") == "+393331234567"
+    assert normalize_number("+39 333 1234567") == "+393331234567"
+
+
+def test_chiamami_codice_errato(monkeypatch):
+    import httpx
+
+    monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest_fail())
+    r = make_callback_client().post("/chiamami", data={"numero": "3331234567", "codice": "no"})
+    assert r.status_code == 403 and "codice di accesso" in r.text
+
+
+def test_chiamami_solo_cellulari_italiani(monkeypatch):
     import httpx
 
     monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest_fail())
     client = make_callback_client()
-    r = client.post("/chiamami", data={"numero": OPERATORE, "password": "no"})
-    assert "Password errata" in r.text
+    for numero in ["+44 7700 900123", "051 123456", "+39 899 123456", "abc"]:
+        r = client.post("/chiamami", data={"numero": numero, "codice": "segreta"})
+        assert r.status_code == 400, numero
 
 
-def test_chiamami_numero_non_autorizzato(monkeypatch):
-    import httpx
-
-    monkeypatch.setattr(httpx, "post", lambda *a, **k: pytest_fail())
-    client = make_callback_client()
-    r = client.post("/chiamami", data={"numero": "+391111111111", "password": "segreta"})
-    assert "non autorizzato" in r.text
-
-
-def test_chiamami_avvia_chiamata(monkeypatch):
+def fake_twilio(monkeypatch):
     import httpx
 
     chiamate = []
@@ -353,14 +368,47 @@ def test_chiamami_avvia_chiamata(monkeypatch):
         return httpx.Response(201, json={"sid": "CA1"}, request=httpx.Request("POST", url))
 
     monkeypatch.setattr(httpx, "post", finto_post)
-    client = make_callback_client()
-    assert OPERATORE not in client.get("/chiamami").text  # numero mascherato nella pagina
-    r = client.post("/chiamami", data={"numero": OPERATORE, "password": "segreta"})
+    return chiamate
+
+
+def test_chiamami_avvia_chiamata(monkeypatch):
+    chiamate = fake_twilio(monkeypatch)
+    r = make_callback_client().post("/chiamami", data={"numero": "333 123 4567", "codice": "segreta"})
     assert "Ti sto chiamando" in r.text
     url, data = chiamate[0]
     assert url.endswith("/Accounts/AC123/Calls.json")
-    assert data["To"] == OPERATORE and data["From"] == "+15550001111"
+    assert data["To"] == "+393331234567" and data["From"] == "+15550001111"
     assert data["Url"] == PUBLIC_URL + "/voice/incoming"
+    assert data["TimeLimit"] == "300"
+
+
+def test_chiamami_limiti(monkeypatch):
+    chiamate = fake_twilio(monkeypatch)
+    client = make_callback_client(callback_max_per_hour=2)
+    ok = {"codice": "segreta"}
+    assert client.post("/chiamami", data={**ok, "numero": "3331111111"}).status_code == 200
+    # stesso numero subito dopo: rifiutato
+    assert client.post("/chiamami", data={**ok, "numero": "3331111111"}).status_code == 429
+    assert client.post("/chiamami", data={**ok, "numero": "3332222222"}).status_code == 200
+    # limite orario raggiunto
+    assert client.post("/chiamami", data={**ok, "numero": "3333333333"}).status_code == 429
+    assert len(chiamate) == 2
+
+
+def test_chiamami_numero_extra_autorizzato(monkeypatch):
+    chiamate = fake_twilio(monkeypatch)
+    client = make_callback_client(callback_numbers="+44 7700 900123")
+    r = client.post("/chiamami", data={"numero": "+447700900123", "codice": "segreta"})
+    assert r.status_code == 200 and chiamate[0][1]["To"] == "+447700900123"
+
+
+def test_limiter_scade():
+    from argo.channels.callback import CallLimiter
+
+    limiter = CallLimiter(per_number_seconds=180, max_per_hour=1)
+    limiter.record("+39333", now=0)
+    assert limiter.check("+39333", now=100) is not None
+    assert limiter.check("+39333", now=3601) is None
 
 
 def test_chiamata_in_uscita_usa_il_destinatario():
