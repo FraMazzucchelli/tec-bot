@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     # Informazioni commerciali da cui risponde la modalità "info"
     info_file: str = "info/argo.md"
 
+    # App (PWA) su /app: voce via internet con il Twilio Voice SDK
+    app_enabled: bool = True
+    twilio_api_key: str = ""  # SK…, da Account → API keys & tokens
+    twilio_api_secret: str = ""
+    twilio_twiml_app_sid: str = ""  # AP…, TwiML App con Voice URL {URL}/voice/incoming
+    app_max_calls_per_hour: int = 30  # 0 = nessun limite
+
     public_base_url: str = ""
 
     # Solo per prove in locale senza Twilio/Telegram: MAI true in produzione

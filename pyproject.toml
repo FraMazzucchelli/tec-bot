@@ -25,7 +25,7 @@ build-backend = "setuptools.build_meta"
 where = ["src"]
 
 [tool.setuptools.package-data]
-argo = ["templates/*.html"]
+argo = ["templates/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

@@ -6,6 +6,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from .assistant import Assistant
+from .channels import app as app_channel
 from .channels import callback, chat, relay, voice, web
 from .config import Settings, get_settings
 from .info import InfoAssistant, load_info
@@ -47,6 +48,7 @@ def create_app(
     app.include_router(chat.router)
     app.include_router(callback.router)
     app.include_router(web.router)
+    app.include_router(app_channel.router)
 
     @app.get("/health")
     def health() -> dict:
@@ -65,6 +67,7 @@ def create_app(
                 "ticket_progetto": s.jira_project_key if assistant.tickets is not None else None,
                 "operatore": bool(s.human_support_number),
                 "voce": s.voice_mode,
+                "app_voce": bool(s.twilio_api_key and s.twilio_api_secret and s.twilio_twiml_app_sid),
                 "fatti_chiamare": bool(s.callback_enabled and s.twilio_voice_from),
                 "codice_accesso": bool(s.callback_password),
                 "chat_sito": s.web_chat_enabled,

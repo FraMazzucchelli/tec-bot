@@ -875,3 +875,81 @@ def test_relay_streaming_e_operatore_trattiene_il_testo():
     # nessun pezzo detto a voce: la frase la dice /voice/relay-fine prima del trasferimento
     assert end["type"] == "end"
     assert json.loads(end["handoffData"]) == {"azione": "operatore", "testo": "Ti passo un collega."}
+
+
+# --- App (PWA) ---------------------------------------------------------------
+
+from argo.channels.app import TokenLimiter, access_token  # noqa: E402
+
+
+def make_app_client(**kwargs):
+    settings = Settings(
+        _env_file=None,
+        twilio_account_sid="AC1", twilio_api_key="SK1", twilio_api_secret="segreto-api",
+        twilio_twiml_app_sid="AP1", **kwargs,
+    )
+    return TestClient(create_app(settings, Assistant(FakeClaude([]), "m", kb(), None)))
+
+
+def decode_jwt(token):
+    import base64
+
+    def part(p):
+        return json.loads(base64.urlsafe_b64decode(p + "=" * (-len(p) % 4)))
+
+    header, payload, _ = token.split(".")
+    return part(header), part(payload)
+
+
+def test_access_token_firmato():
+    import base64
+    import hashlib
+    import hmac
+
+    token = access_token("AC1", "SK1", "segreto", "tecnico", "AP1", ttl=600, now=1000)
+    header, payload = decode_jwt(token)
+    assert header["cty"] == "twilio-fpa;v=1" and header["alg"] == "HS256"
+    assert payload["iss"] == "SK1" and payload["sub"] == "AC1" and payload["exp"] == 1600
+    assert payload["grants"]["identity"] == "tecnico"
+    assert payload["grants"]["voice"]["outgoing"]["application_sid"] == "AP1"
+    signing, sig = token.rsplit(".", 1)
+    expected = base64.urlsafe_b64encode(hmac.new(b"segreto", signing.encode(), hashlib.sha256).digest()).rstrip(b"=")
+    assert sig.encode() == expected
+
+
+def test_app_token():
+    client = make_app_client()
+    r = client.post("/app/token", json={})
+    assert r.status_code == 200
+    _, payload = decode_jwt(r.json()["token"])
+    assert payload["grants"]["identity"].startswith("argo-app-")
+
+
+def test_app_token_codice_e_configurazione():
+    client = make_app_client(callback_password="x")
+    assert client.post("/app/token", json={"codice": "no"}).status_code == 403
+    assert client.post("/app/token", json={"codice": "x"}).status_code == 200
+    client = make_app_client(twilio_twiml_app_sid="")
+    assert client.post("/app/token", json={}).status_code == 503
+    client = make_app_client(app_enabled=False)
+    assert client.post("/app/token", json={}).status_code == 403
+
+
+def test_app_limite_token():
+    limiter = TokenLimiter(2)
+    assert limiter.allow(now=0) and limiter.allow(now=1)
+    assert not limiter.allow(now=2)
+    assert limiter.allow(now=3700)
+
+
+def test_app_pagina_e_pwa():
+    client = make_app_client(callback_password="x")
+    html = client.get("/app").text
+    assert "var NEEDS_CODE = true;" in html and "{{" not in html
+    assert 'rel="manifest"' in html
+    manifest = client.get("/app/manifest.webmanifest").json()
+    assert manifest["start_url"] == "/app" and manifest["display"] == "standalone"
+    assert client.get("/app/icon-192.png").headers["content-type"] == "image/png"
+    assert client.get("/app/icon-64.png").status_code == 404
+    sw = client.get("/app/sw.js")
+    assert sw.headers["service-worker-allowed"] == "/app" and "/app/token" not in sw.text

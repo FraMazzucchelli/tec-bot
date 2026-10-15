@@ -191,6 +191,26 @@ tecnico e risponde con il testo di Claude. Per passare all'operatore o salutare 
 chiude la sessione e Twilio chiama `/voice/relay-fine`, che fa `<Dial>` o `<Hangup>`.
 Per tornare al vecchio flusso basta `VOICE_MODE=gather`.
 
+## App ARGO (PWA)
+
+All'indirizzo `/app` c'è una web app installabile sul telefono ("Aggiungi alla schermata
+Home"): un pulsante per **parlare con ARGO via internet**, senza chiamare un numero.
+La chiamata parte dal browser con il Twilio Voice SDK e segue lo stesso flusso del
+telefono (manuali, ticket, passaggio a un collega, ConversationRelay se attivo).
+
+Configurazione su Twilio, una volta sola:
+1. *Account → API keys & tokens → Create API key* (tipo Standard): copia SID (`SK…`)
+   e secret in `TWILIO_API_KEY` e `TWILIO_API_SECRET`. Il secret si vede solo una volta.
+2. *Voice → TwiML Apps → Create new TwiML App*: Voice Request URL
+   `{PUBLIC_BASE_URL}/voice/incoming`, metodo POST. Copia il SID (`AP…`) in
+   `TWILIO_TWIML_APP_SID`.
+3. Per passare a un collega dall'app serve che le chiamate verso l'Italia siano abilitate
+   (*Voice → Settings → Geo permissions*), come per il numero.
+
+Se è impostato `CALLBACK_PASSWORD`, l'app chiede lo stesso codice (lo ricorda sul
+telefono). `APP_MAX_CALLS_PER_HOUR` limita le chiamate dall'app (predefinito 30, `0` = nessun limite).
+In chiamata dall'app non c'è un numero di telefono: ARGO non può mandare la scheda su WhatsApp.
+
 ## Chat sul sito
 
 La pagina iniziale ha una sezione **Chiedi ad ARGO** con due modalità:
