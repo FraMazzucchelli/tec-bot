@@ -99,7 +99,18 @@ CHANNEL_STYLE = {
     ),
     "telegram": "Il tecnico scrive in chat: puoi usare brevi elenchi numerati per le procedure.",
     "whatsapp": "Il tecnico scrive su WhatsApp: risposte compatte, elenchi brevi se servono.",
+    "web": (
+        "Questa è la prova pubblica di ARGO sul sito: chi scrive vuole vedere come rispondi "
+        "dai manuali. Risposte brevi, al massimo un elenco corto. In questa prova puoi solo "
+        "cercare nei manuali: non puoi aprire ticket, passare a un collega o inviare WhatsApp. "
+        "Se servirebbe, spiega in una frase cosa faresti nel servizio vero e invita a provare "
+        "la chiamata dal modulo \"Fatti chiamare\" della pagina."
+    ),
 }
+
+# Strumenti ammessi per canale: assente = tutti. La prova sul sito è pubblica,
+# quindi niente ticket, operatore o WhatsApp verso numeri altrui.
+CHANNEL_TOOLS: dict[str, set[str]] = {"web": {"cerca_manuali"}}
 
 TOOLS: list[dict[str, Any]] = [
     {
@@ -253,17 +264,16 @@ class Assistant:
             self._phones[session_id] = phone
         messages = self._history.setdefault(session_id, [])
         messages.append({"role": "user", "content": text})
-        system = SYSTEM_PROMPT.format(name=self.name) + "\n" + CHANNEL_STYLE.get(
-            channel, ""
-        ).format(spoken_name=self.spoken_name)
+        system = self._system(channel)
+        tools = self._tools(channel)
 
         for _ in range(MAX_TOOL_ROUNDS):
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=1024,
                 system=system,
-                tools=TOOLS,
                 messages=messages,
+                **({"tools": tools} if tools else {}),
             )
             messages.append({"role": "assistant", "content": response.content})
 
@@ -286,7 +296,18 @@ class Assistant:
         self._trim(session_id)
         return "Non riesco a completare la richiesta. Vuoi che apra un ticket per un collega?"
 
+    def _system(self, channel: str) -> str:
+        return SYSTEM_PROMPT.format(name=self.name) + "\n" + CHANNEL_STYLE.get(
+            channel, ""
+        ).format(spoken_name=self.spoken_name)
+
+    def _tools(self, channel: str) -> list[dict[str, Any]]:
+        allowed = CHANNEL_TOOLS.get(channel)
+        return [t for t in TOOLS if allowed is None or t["name"] in allowed]
+
     def _run_tool(self, name: str, args: dict[str, Any], session_id: str, channel: str) -> str:
+        if name not in {t["name"] for t in self._tools(channel)}:
+            return f"Strumento non disponibile su questo canale: {name}"
         try:
             if name == "cerca_manuali":
                 hits = self.knowledge.search(args.get("query", ""))

@@ -53,6 +53,10 @@ CODE_FIELD = """<div class="field">
           <label for="codice">Codice di accesso</label>
           <input id="codice" name="codice" type="password" autocomplete="off" required>
         </div>"""
+CHAT_CODE_FIELD = """<div id="chat-campo-codice" hidden>
+              <label for="chat-codice">Codice di accesso per la prova</label>
+              <input id="chat-codice" type="password" autocomplete="off">
+            </div>"""
 INTRO_WITH_CODE = (
     "Inserisci il tuo cellulare e il codice di accesso che ti hanno dato: "
     "dopo pochi secondi ARGO ti telefona."
@@ -83,6 +87,7 @@ def _render(
         .replace("{{CAMPO_CODICE}}", CODE_FIELD if needs_code else "")
         .replace("{{INTRO_MODULO}}", INTRO_WITH_CODE if needs_code else INTRO_OPEN)
         .replace("{{PRIVACY}}", privacy)
+        .replace("{{CAMPO_CODICE_CHAT}}", CHAT_CODE_FIELD if needs_code else "")
     )
     return HTMLResponse(html, status_code=status)
 

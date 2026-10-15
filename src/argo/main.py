@@ -1,19 +1,25 @@
 """Server web di ARGO: avvia con `uvicorn argo.main:app`."""
 
 import logging
+from pathlib import Path
 
 from fastapi import FastAPI
 
 from .assistant import Assistant
-from .channels import callback, chat, voice
+from .channels import callback, chat, voice, web
 from .config import Settings, get_settings
+from .info import InfoAssistant, load_info
 from .knowledge import KnowledgeBase
 from .logging_privacy import install as install_logging
 from .messaging import TwilioWhatsApp
 from .tickets import JiraTicketService
 
 
-def create_app(settings: Settings | None = None, assistant: Assistant | None = None) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    assistant: Assistant | None = None,
+    info_assistant: InfoAssistant | None = None,
+) -> FastAPI:
     settings = settings or get_settings()
     install_logging(logging.INFO)
 
@@ -26,13 +32,20 @@ def create_app(settings: Settings | None = None, assistant: Assistant | None = N
             else None
         )
         assistant = Assistant.from_settings(settings, knowledge, tickets, messenger)
+    if info_assistant is None:
+        # stesso client Claude e stesso Jira dell'assistente tecnico
+        info_assistant = InfoAssistant(
+            assistant.client, settings.claude_model, load_info(settings.info_file), assistant.tickets
+        )
 
     app = FastAPI(title="ARGO - centralino tecnici")
     app.state.settings = settings
     app.state.assistant = assistant
+    app.state.info_assistant = info_assistant
     app.include_router(voice.router)
     app.include_router(chat.router)
     app.include_router(callback.router)
+    app.include_router(web.router)
 
     @app.get("/health")
     def health() -> dict:
@@ -52,6 +65,8 @@ def create_app(settings: Settings | None = None, assistant: Assistant | None = N
                 "operatore": bool(s.human_support_number),
                 "fatti_chiamare": bool(s.callback_enabled and s.twilio_voice_from),
                 "codice_accesso": bool(s.callback_password),
+                "chat_sito": s.web_chat_enabled,
+                "info_commerciali": Path(s.info_file).is_file(),
             },
         }
 

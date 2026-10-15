@@ -161,10 +161,49 @@
   .msg.ok { background: #D9F4C7; color: #17301F; }
   .msg.err { background: #F6D6D2; color: #5E1A13; }
 
+  /* Chat sul sito */
+  .chat { display: grid; grid-template-columns: 1fr 1.4fr; gap: 56px; align-items: start; }
+  .chat-box {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+    display: grid; grid-template-rows: auto 1fr auto; min-height: 460px; overflow: hidden;
+  }
+  .modes { display: flex; border-bottom: 1px solid var(--line); }
+  .modes button {
+    flex: 1; font: 700 1rem/1.2 var(--text); padding: 14px 10px; border: 0; cursor: pointer;
+    background: transparent; color: var(--muted); border-bottom: 4px solid transparent;
+  }
+  .modes button[aria-selected="true"] { color: var(--graphite); border-bottom-color: var(--yellow); }
+  .modes button[data-modo="prova"][aria-selected="true"] { border-bottom-color: var(--green); }
+  .log {
+    padding: 18px; display: flex; flex-direction: column; gap: 12px;
+    max-height: 420px; overflow-y: auto; min-width: 0;
+  }
+  .bubble { max-width: 88%; padding: 10px 13px; border-radius: 10px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .bubble.me { align-self: flex-end; background: var(--graphite); color: var(--wall); }
+  .bubble.bot { align-self: flex-start; background: #fff; border: 1px solid var(--line); }
+  .bubble.err { align-self: stretch; background: #F6D6D2; color: #5E1A13; font-weight: 700; }
+  .bubble.wait { color: var(--muted); font-style: italic; }
+  .chat-form { display: grid; gap: 10px; padding: 14px; border-top: 1px solid var(--line); }
+  .chat-form .row { display: flex; gap: 10px; }
+  .chat-form textarea, .chat-form input {
+    width: 100%; font: 400 1rem/1.4 var(--text); padding: 12px; resize: vertical;
+    border: 2px solid var(--line); border-radius: 8px; background: #fff; color: var(--graphite);
+  }
+  .chat-form textarea { min-height: 48px; }
+  .chat-form .button { padding: 12px 20px; flex: none; width: auto; }
+  .chat-form .tools { display: flex; justify-content: space-between; gap: 10px; font-size: .88rem; color: var(--muted); }
+  .chat-form .tools button { background: none; border: 0; padding: 0; color: var(--graphite); text-decoration: underline; cursor: pointer; font: inherit; }
+  .suggest { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  .suggest button {
+    font: 400 .92rem/1.3 var(--text); padding: 8px 12px; border-radius: 99px; cursor: pointer;
+    background: transparent; border: 1px solid var(--graphite); color: var(--graphite); text-align: left;
+  }
+  .suggest button:hover { background: var(--graphite); color: var(--wall); }
+
   footer { padding: 0 0 40px; font-size: .9rem; color: var(--muted); }
 
   @media (max-width: 860px) {
-    .hero, .demo, .callme { grid-template-columns: 1fr; gap: 36px; }
+    .hero, .demo, .callme, .chat { grid-template-columns: 1fr; gap: 36px; }
     .hero { padding-top: 16px; }
     .wires { grid-template-columns: 1fr; }
     .callme { padding: 32px 22px; }
@@ -185,7 +224,10 @@
 <div class="wrap">
   <header class="top">
     <a class="wordmark" href="/">ARGO</a>
-    <a class="cta-small" href="#chiamami">Fatti chiamare</a>
+    <nav style="display:flex;gap:10px;flex-wrap:wrap">
+      <a class="cta-small" href="#chat">Chatta</a>
+      <a class="cta-small" href="#chiamami">Fatti chiamare</a>
+    </nav>
   </header>
 
   <main>
@@ -260,6 +302,36 @@
       </div>
     </section>
 
+    <section class="block" id="chat" aria-labelledby="titolo-chat">
+      <div class="chat">
+        <div>
+          <h2 id="titolo-chat">Chiedi ad ARGO</h2>
+          <p class="intro" id="chat-intro">Domande sul servizio: cosa fa, cosa serve per attivarlo, come
+          funzionano i prezzi. Se vuoi un preventivo o una demo, lascia un contatto direttamente qui.</p>
+          <ul class="suggest" id="chat-suggest" aria-label="Domande di esempio"></ul>
+        </div>
+        <div class="chat-box">
+          <div class="modes" role="tablist" aria-label="Modalità della chat">
+            <button type="button" role="tab" data-modo="info" aria-selected="true" aria-controls="chat-log">Informazioni sul servizio</button>
+            <button type="button" role="tab" data-modo="prova" aria-selected="false" aria-controls="chat-log">Prova sui manuali</button>
+          </div>
+          <div class="log" id="chat-log" role="log" aria-live="polite"></div>
+          <form class="chat-form" id="chat-form">
+            {{CAMPO_CODICE_CHAT}}
+            <div class="row">
+              <label for="chat-testo" class="sr" style="position:absolute;left:-9999px">Messaggio</label>
+              <textarea id="chat-testo" rows="2" maxlength="800" placeholder="Scrivi una domanda…" required style="flex:1 1 220px"></textarea>
+              <button class="button" type="submit" id="chat-invia">Invia</button>
+            </div>
+            <div class="tools">
+              <span>Risponde un assistente automatico.</span>
+              <button type="button" id="chat-nuova">Nuova conversazione</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </section>
+
     <section class="callme" id="chiamami" aria-labelledby="titolo-chiamami">
       <div>
         <h2 id="titolo-chiamami">Fatti chiamare da ARGO</h2>
@@ -290,5 +362,106 @@
     vale sempre la documentazione del produttore.
   </footer>
 </div>
+<script>
+(function () {
+  var MODES = {
+    info: {
+      intro: "Domande sul servizio: cosa fa, cosa serve per attivarlo, come funzionano i prezzi. Se vuoi un preventivo o una demo, lascia un contatto direttamente qui.",
+      hello: "Ciao! Sono l'assistente informativo di ARGO. Chiedimi pure come funziona il servizio o come si attiva.",
+      examples: ["Cosa serve per attivare ARGO?", "Come funzionano i prezzi?", "Si integra con il nostro sistema ticket?", "Vorrei una demo"]
+    },
+    prova: {
+      intro: "Fingiti un tecnico al lavoro: ARGO risponde dalla scheda tecnica dei nebbiogeni Serie LAN, come farebbe al telefono. In questa prova non apre ticket e non manda WhatsApp.",
+      hello: "Ciao, sono ARGO. Su quale impianto stai lavorando?",
+      examples: ["Quanto ci mette a scaldarsi un DT-800 da freddo?", "Che capacità ha il serbatoio dell'EX-200?", "Differenze tra DT-400 e DT-800?"]
+    }
+  };
+  var log = document.getElementById("chat-log");
+  var form = document.getElementById("chat-form");
+  var input = document.getElementById("chat-testo");
+  var send = document.getElementById("chat-invia");
+  var code = document.getElementById("chat-codice");
+  var codeField = document.getElementById("chat-campo-codice");
+  var tabs = document.querySelectorAll(".modes button");
+  var mode = "info";
+  var sessions = {};
+  var histories = { info: [], prova: [] };
+
+  function newId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
+    return (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 32);
+  }
+  function bubble(kind, text) {
+    var el = document.createElement("div");
+    el.className = "bubble " + kind;
+    el.textContent = text;
+    log.appendChild(el);
+    log.scrollTop = log.scrollHeight;
+    return el;
+  }
+  function render() {
+    log.textContent = "";
+    bubble("bot", MODES[mode].hello);
+    histories[mode].forEach(function (m) { bubble(m[0], m[1]); });
+    document.getElementById("chat-intro").textContent = MODES[mode].intro;
+    var list = document.getElementById("chat-suggest");
+    list.textContent = "";
+    MODES[mode].examples.forEach(function (q) {
+      var li = document.createElement("li");
+      var b = document.createElement("button");
+      b.type = "button"; b.textContent = q;
+      b.addEventListener("click", function () { input.value = q; ask(); });
+      li.appendChild(b); list.appendChild(li);
+    });
+    if (codeField) codeField.hidden = mode !== "prova";
+    if (code) code.required = mode === "prova";
+  }
+  function setMode(m) {
+    mode = m;
+    tabs.forEach(function (t) { t.setAttribute("aria-selected", String(t.dataset.modo === m)); });
+    render();
+  }
+  function ask() {
+    var text = input.value.trim();
+    if (!text || send.disabled) return;
+    if (mode === "prova" && code && !code.value) { code.focus(); return; }
+    var m = mode;
+    if (!sessions[m]) sessions[m] = newId();
+    histories[m].push(["me", text]);
+    bubble("me", text);
+    input.value = "";
+    send.disabled = true;
+    var wait = bubble("bot wait", "Sto scrivendo…");
+    fetch("/chat/web", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modo: m, sessione: sessions[m], testo: text, codice: code ? code.value : "" })
+    }).then(function (r) {
+      return r.json().catch(function () { return { errore: "Risposta non valida dal server." }; });
+    }).then(function (data) {
+      wait.remove();
+      if (data.risposta) { histories[m].push(["bot", data.risposta]); if (m === mode) bubble("bot", data.risposta); }
+      else { if (m === mode) bubble("err", data.errore || "Errore imprevisto."); }
+      if (data.codice === "conversazione") sessions[m] = null;
+    }).catch(function () {
+      wait.remove();
+      if (m === mode) bubble("err", "Connessione non riuscita. Riprova.");
+    }).finally(function () { send.disabled = false; input.focus(); });
+  }
+  tabs.forEach(function (t) { t.addEventListener("click", function () { setMode(t.dataset.modo); }); });
+  form.addEventListener("submit", function (e) { e.preventDefault(); ask(); });
+  input.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); }
+  });
+  document.getElementById("chat-nuova").addEventListener("click", function () {
+    if (sessions[mode]) {
+      fetch("/chat/web/nuova", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ modo: mode, sessione: sessions[mode] }) }).catch(function () {});
+    }
+    sessions[mode] = null; histories[mode] = []; render();
+  });
+  render();
+})();
+</script>
 </body>
 </html>

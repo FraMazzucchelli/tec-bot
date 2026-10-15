@@ -541,3 +541,129 @@ def test_saluto_dichiara_assistente_automatico():
     client, _ = make_client([])
     r = post_twilio(client, "/voice/incoming", {"CallSid": "CA1", "From": "+39333"})
     assert "assistente automatico" in r.text
+
+
+# --- Chat sul sito -----------------------------------------------------------
+
+from argo.channels.web import WebChatLimiter  # noqa: E402
+from argo.info import InfoAssistant, load_info  # noqa: E402
+
+SESSIONE = "abcdef0123456789abcdef"
+
+
+def web_client(claude=None, info_claude=None, tickets=None, **settings_kwargs):
+    settings = Settings(_env_file=None, **settings_kwargs)
+    assistant = Assistant(claude or FakeClaude([]), "m", kb(), tickets)
+    info = InfoAssistant(info_claude or FakeClaude([]), "m", "ARGO costa X al mese.", tickets)
+    return TestClient(create_app(settings, assistant, info))
+
+
+def test_chat_info_risponde_dal_documento():
+    info_claude = FakeClaude([([text_block("ARGO risponde dai manuali.")], "end_turn")])
+    client = web_client(info_claude=info_claude)
+    r = client.post("/chat/web", json={"modo": "info", "sessione": SESSIONE, "testo": "Cosa fa?"})
+    assert r.status_code == 200
+    assert r.json() == {"risposta": "ARGO risponde dai manuali."}
+    call = info_claude.calls[0]
+    assert "ARGO costa X al mese." in call["system"]
+    assert [t["name"] for t in call["tools"]] == ["lascia_contatto"]
+
+
+def test_chat_info_lascia_contatto_apre_ticket():
+    tickets = FakeTickets()
+    info_claude = FakeClaude([
+        ([tool_block("lascia_contatto", {
+            "nome": "Mario Rossi", "azienda": "Impianti Srl",
+            "contatto": "mario@impianti.it", "richiesta": "demo per 12 tecnici",
+        })], "tool_use"),
+        ([text_block("Fatto, ti ricontattiamo.")], "end_turn"),
+    ])
+    client = web_client(info_claude=info_claude, tickets=tickets)
+    r = client.post("/chat/web", json={"modo": "info", "sessione": SESSIONE, "testo": "Sì, va bene"})
+    assert r.json()["risposta"] == "Fatto, ti ricontattiamo."
+    summary, description, contact = tickets.created[0]
+    assert summary == "[Contatto commerciale] Impianti Srl"
+    assert "demo per 12 tecnici" in description and contact == "mario@impianti.it"
+
+
+def test_chat_prova_solo_ricerca_manuali():
+    tickets = FakeTickets()
+    claude = FakeClaude([
+        ([tool_block("apri_ticket", {"titolo": "x", "descrizione": "y"})], "tool_use"),
+        ([text_block("Nella prova non apro ticket.")], "end_turn"),
+    ])
+    client = web_client(claude=claude, tickets=tickets)
+    r = client.post("/chat/web", json={"modo": "prova", "sessione": SESSIONE, "testo": "Apri un ticket"})
+    assert r.json()["risposta"] == "Nella prova non apro ticket."
+    assert [t["name"] for t in claude.calls[0]["tools"]] == ["cerca_manuali"]
+    assert "prova pubblica" in claude.calls[0]["system"]
+    assert tickets.created == []  # lo strumento non disponibile non viene eseguito
+
+
+def test_chat_prova_richiede_codice():
+    claude = FakeClaude([([text_block("ok")], "end_turn")])
+    client = web_client(claude=claude, callback_password="segreto")
+    body = {"modo": "prova", "sessione": SESSIONE, "testo": "ciao"}
+    assert client.post("/chat/web", json=body).status_code == 403
+    assert client.post("/chat/web", json={**body, "codice": "segreto"}).status_code == 200
+    # la modalità informazioni resta aperta (e non consuma la risposta preparata)
+    info_claude = FakeClaude([([text_block("info")], "end_turn")])
+    client = web_client(info_claude=info_claude, callback_password="segreto")
+    assert client.post("/chat/web", json={**body, "modo": "info"}).status_code == 200
+
+
+def test_chat_valida_richiesta():
+    client = web_client(web_chat_max_chars=10)
+    post = lambda **b: client.post("/chat/web", json={"modo": "info", "sessione": SESSIONE, "testo": "ciao", **b})
+    assert post(modo="altro").status_code == 400
+    assert post(sessione="corta").status_code == 400
+    assert post(testo="   ").status_code == 400
+    assert post(testo="x" * 11).status_code == 400
+    assert web_client(web_chat_enabled=False).post(
+        "/chat/web", json={"modo": "info", "sessione": SESSIONE, "testo": "ciao"}
+    ).status_code == 403
+
+
+def test_chat_limiti():
+    limiter = WebChatLimiter(max_per_hour=3, max_per_session=2)
+    for _ in range(2):
+        assert limiter.check("a", now=0) is None
+        limiter.record("a", now=0)
+    assert limiter.check("a", now=10) == "conversazione"
+    assert limiter.check("b", now=10) is None
+    limiter.record("b", now=10)
+    assert limiter.check("c", now=20) == "limite"
+    assert limiter.check("c", now=3700) is None  # dopo un'ora si riparte
+
+
+def test_chat_errore_claude():
+    client = web_client()
+    client.app.state.info_assistant.client = SimpleNamespace(
+        messages=SimpleNamespace(create=lambda **k: (_ for _ in ()).throw(RuntimeError("giù")))
+    )
+    r = client.post("/chat/web", json={"modo": "info", "sessione": SESSIONE, "testo": "ciao"})
+    assert r.status_code == 502
+
+
+def test_chat_nuova_conversazione_cancella_cronologia():
+    info_claude = FakeClaude([([text_block("ok")], "end_turn")])
+    client = web_client(info_claude=info_claude)
+    client.post("/chat/web", json={"modo": "info", "sessione": SESSIONE, "testo": "ciao"})
+    info = client.app.state.info_assistant
+    assert info._history
+    client.post("/chat/web/nuova", json={"modo": "info", "sessione": SESSIONE})
+    assert not info._history
+
+
+def test_landing_ha_la_chat():
+    html = web_client().get("/").text
+    assert 'id="chat-log"' in html and "{{" not in html
+    html = web_client(callback_password="x").get("/").text
+    assert 'id="chat-codice"' in html
+
+
+def test_file_informazioni(tmp_path):
+    assert "ARGO" in load_info(tmp_path / "manca.md")
+    (tmp_path / "info.md").write_text("Prezzi su richiesta", encoding="utf-8")
+    assert load_info(tmp_path / "info.md") == "Prezzi su richiesta"
+    assert Path("info/argo.md").is_file()

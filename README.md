@@ -21,6 +21,8 @@ WhatsApp (Twilio)  ──────┘                                    └�
 - `src/argo/tickets.py` – creazione ticket su Jira Cloud (REST API v3).
 - `src/argo/channels/voice.py` – webhook Twilio Voice con riconoscimento vocale in italiano.
 - `src/argo/channels/chat.py` – webhook Telegram e WhatsApp.
+- `src/argo/channels/web.py` – chat sul sito (modalità informazioni e prova sui manuali).
+- `src/argo/info.py` + `info/argo.md` – assistente informativo per le aziende interessate.
 
 ## Avvio in locale
 
@@ -155,6 +157,32 @@ ARGO risponde solo su temi tecnici (impianti di sicurezza, interventi, ticket). 
 domande fuori tema risponde con una frase cortese e riporta il discorso sull'impianto;
 ignora anche i tentativi di fargli cambiare ruolo o ignorare le istruzioni. Il vincolo
 è nel prompt di sistema in `src/argo/assistant.py` (sezione "Argomenti ammessi").
+
+## Chat sul sito
+
+La pagina iniziale ha una sezione **Chiedi ad ARGO** con due modalità:
+
+- **Informazioni sul servizio** – per le aziende interessate: cosa fa ARGO, cosa serve,
+  come si attiva, come funzionano i prezzi. Risponde **solo** dal file `info/argo.md`
+  (variabile `INFO_FILE`): aggiorna lì prezzi e condizioni, senza toccare il codice.
+  Le parti tra `[ ]` sono considerate "da definire" e l'assistente non le legge.
+  Se il visitatore vuole un preventivo o una demo, dopo il suo consenso lo strumento
+  `lascia_contatto` apre su Jira un ticket `[Contatto commerciale] <azienda>`.
+- **Prova sui manuali** – la stessa ARGO del telefono, ma può solo cercare nei manuali:
+  niente ticket, operatore o WhatsApp, perché la pagina è pubblica. Se è impostato
+  `CALLBACK_PASSWORD` chiede lo stesso codice di accesso del modulo "Fatti chiamare".
+
+Endpoint: `POST /chat/web` con JSON `{"modo": "info"|"prova", "sessione", "testo", "codice"}`,
+risposta `{"risposta": ...}` oppure `{"errore": ..., "codice": ...}`.
+
+Ogni messaggio è una chiamata a Claude, quindi ci sono dei limiti (in memoria, per un solo server):
+
+| Variabile | Predefinito | Significato |
+|---|---|---|
+| `WEB_CHAT_ENABLED` | `true` | `false` disattiva la chat |
+| `WEB_CHAT_MAX_CHARS` | `800` | lunghezza massima di un messaggio |
+| `WEB_CHAT_MAX_MESSAGES` | `30` | messaggi per conversazione |
+| `WEB_CHAT_MAX_PER_HOUR` | `300` | messaggi all'ora in totale, `0` = nessun limite |
 
 ## Prossimi passi
 

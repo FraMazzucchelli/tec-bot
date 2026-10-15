@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     callback_max_per_hour: int = 0
     callback_cooldown_seconds: int = 0
 
+    # Chat sul sito: modalità "info" (aperta) e "prova" (codice CALLBACK_PASSWORD se impostato)
+    web_chat_enabled: bool = True
+    web_chat_max_chars: int = 800
+    web_chat_max_messages: int = 30  # per conversazione
+    web_chat_max_per_hour: int = 300  # totale, 0 = nessun limite
+    # Informazioni commerciali da cui risponde la modalità "info"
+    info_file: str = "info/argo.md"
+
     public_base_url: str = ""
 
     # Solo per prove in locale senza Twilio/Telegram: MAI true in produzione
