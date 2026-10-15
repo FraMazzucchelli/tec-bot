@@ -20,6 +20,7 @@ WhatsApp (Twilio)  ──────┘                                    └�
   cartella `manuals/`. Interfaccia pensata per passare in futuro a una ricerca vettoriale.
 - `src/argo/tickets.py` – creazione ticket su Jira Cloud (REST API v3).
 - `src/argo/channels/voice.py` – webhook Twilio Voice con riconoscimento vocale in italiano.
+- `src/argo/channels/relay.py` – websocket per Twilio ConversationRelay (`VOICE_MODE=relay`).
 - `src/argo/channels/chat.py` – webhook Telegram e WhatsApp.
 - `src/argo/channels/web.py` – chat sul sito (modalità informazioni e prova sui manuali).
 - `src/argo/info.py` + `info/argo.md` – assistente informativo per le aziende interessate.
@@ -157,6 +158,28 @@ ARGO risponde solo su temi tecnici (impianti di sicurezza, interventi, ticket). 
 domande fuori tema risponde con una frase cortese e riporta il discorso sull'impianto;
 ignora anche i tentativi di fargli cambiare ruolo o ignorare le istruzioni. Il vincolo
 è nel prompt di sistema in `src/argo/assistant.py` (sezione "Argomenti ammessi").
+
+## Chiamate con ConversationRelay (voce fluida)
+
+Con `VOICE_MODE=relay` le chiamate passano da Twilio **ConversationRelay** invece che da
+`<Gather>`/`<Say>`: il riconoscimento vocale e la voce sono in streaming, il tecnico può
+interrompere ARGO e non c'è più il limite di ~15 secondi per la risposta. Se Claude ci
+mette più di 1,5 secondi (es. ricerca nei manuali) ARGO dice "Un attimo, controllo."
+
+1. Twilio → *Voice → Settings → Privacy & Security*: accetta il
+   *Predictive and Generative AI/ML Features Addendum* e salva.
+2. Imposta `VOICE_MODE=relay` sul server. Il numero resta configurato su
+   `POST {URL}/voice/incoming`: il resto lo decide ARGO.
+3. Voce: `RELAY_TTS_PROVIDER` (`Amazon`, `Google`, `ElevenLabs`) e `RELAY_VOICE`.
+   Predefinito `Amazon` + `Bianca-Neural`, la stessa voce di oggi; con `ElevenLabs`
+   metti in `RELAY_VOICE` l'ID di una voce italiana della libreria ElevenLabs.
+4. `RELAY_HINTS`: parole che il riconoscimento deve capire bene (nomi dei modelli).
+
+Flusso: `/voice/incoming` risponde con `<Connect><ConversationRelay url="wss://…/voice/relay">`;
+il websocket `/voice/relay` (firma `X-Twilio-Signature` verificata) riceve le frasi del
+tecnico e risponde con il testo di Claude. Per passare all'operatore o salutare ARGO
+chiude la sessione e Twilio chiama `/voice/relay-fine`, che fa `<Dial>` o `<Hangup>`.
+Per tornare al vecchio flusso basta `VOICE_MODE=gather`.
 
 ## Chat sul sito
 

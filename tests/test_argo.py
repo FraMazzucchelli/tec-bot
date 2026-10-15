@@ -667,3 +667,131 @@ def test_file_informazioni(tmp_path):
     (tmp_path / "info.md").write_text("Prezzi su richiesta", encoding="utf-8")
     assert load_info(tmp_path / "info.md") == "Prezzi su richiesta"
     assert Path("info/argo.md").is_file()
+
+
+# --- ConversationRelay (VOICE_MODE=relay) ------------------------------------
+
+import json  # noqa: E402
+
+from argo.channels import relay as relay_module  # noqa: E402
+
+
+def make_relay_client(responses, numero=OPERATORE, **kwargs):
+    claude = FakeClaude(responses)
+    assistant = Assistant(claude, "m", kb(), None, numero)
+    settings = Settings(
+        _env_file=None,
+        twilio_auth_token=TWILIO_TOKEN,
+        public_base_url=PUBLIC_URL,
+        human_support_number=numero,
+        voice_mode="relay",
+        **kwargs,
+    )
+    return TestClient(create_app(settings, assistant)), claude
+
+
+def relay_headers(path="/voice/relay"):
+    return {"X-Twilio-Signature": twilio_signature(TWILIO_TOKEN, "wss://argo.example.com" + path, [])}
+
+
+SETUP = {"type": "setup", "callSid": "CA7", "from": "+393331112222", "to": "+15550001111", "direction": "inbound"}
+
+
+def test_relay_twiml_in_arrivo():
+    client, _ = make_relay_client([], relay_tts_provider="ElevenLabs", relay_voice="VOCE_IT")
+    r = post_twilio(client, "/voice/incoming", {"CallSid": "CA1", "From": "+39333"})
+    assert "<Gather" not in r.text
+    assert 'url="wss://argo.example.com/voice/relay"' in r.text
+    assert 'language="it-IT"' in r.text and 'voice="VOCE_IT"' in r.text
+    assert 'ttsProvider="ElevenLabs"' in r.text
+    assert f'action="{PUBLIC_URL}/voice/relay-fine"' in r.text
+
+
+def test_relay_risponde_al_tecnico():
+    client, claude = make_relay_client([([text_block("Controlla il fusibile F2.")], "end_turn")])
+    with client.websocket_connect("/voice/relay", headers=relay_headers()) as ws:
+        ws.send_json(SETUP)
+        ws.send_json({"type": "prompt", "voicePrompt": "la sirena non suona", "last": True})
+        assert ws.receive_json() == {"type": "text", "token": "Controlla il fusibile F2.", "last": True}
+    assert claude.calls[0]["messages"][0]["content"] == "la sirena non suona"
+    assert "telefono" in claude.calls[0]["system"]
+
+
+def test_relay_frase_di_attesa_se_lento(monkeypatch):
+    import time as _time
+
+    monkeypatch.setattr(relay_module, "FILLER_AFTER_SECONDS", 0.05)
+    client, claude = make_relay_client([([text_block("Fatto.")], "end_turn")])
+    original = claude.create
+
+    def slow(**kwargs):
+        _time.sleep(0.3)
+        return original(**kwargs)
+
+    claude.create = slow
+    with client.websocket_connect("/voice/relay", headers=relay_headers()) as ws:
+        ws.send_json(SETUP)
+        ws.send_json({"type": "prompt", "voicePrompt": "batteria", "last": True})
+        assert ws.receive_json()["token"] == relay_module.FILLER_TEXT
+        assert ws.receive_json()["token"] == "Fatto."
+
+
+def test_relay_passa_all_operatore():
+    client, _ = make_relay_client([
+        ([tool_block("passa_a_operatore", {"motivo": "urgente"})], "tool_use"),
+        ([text_block("Ti passo un collega.")], "end_turn"),
+    ])
+    with client.websocket_connect("/voice/relay", headers=relay_headers()) as ws:
+        ws.send_json(SETUP)
+        ws.send_json({"type": "prompt", "voicePrompt": "voglio un collega", "last": True})
+        end = ws.receive_json()
+    assert end["type"] == "end"
+    data = json.loads(end["handoffData"])
+    assert data == {"azione": "operatore", "testo": "Ti passo un collega."}
+    r = post_twilio(client, "/voice/relay-fine", {"HandoffData": end["handoffData"], "SessionStatus": "ended"})
+    assert f">{OPERATORE}</Dial>" in r.text and "Ti passo un collega." in r.text
+
+
+def test_relay_saluto_finale():
+    client, _ = make_relay_client([])
+    with client.websocket_connect("/voice/relay", headers=relay_headers()) as ws:
+        ws.send_json(SETUP)
+        ws.send_json({"type": "prompt", "voicePrompt": "Grazie ciao", "last": True})
+        end = ws.receive_json()
+    assert json.loads(end["handoffData"])["azione"] == "chiudi"
+    r = post_twilio(client, "/voice/relay-fine", {"HandoffData": end["handoffData"]})
+    assert "Buon lavoro" in r.text and "<Hangup/>" in r.text
+
+
+def test_relay_fine_senza_handoff_riaggancia():
+    client, _ = make_relay_client([])
+    r = post_twilio(client, "/voice/relay-fine", {"SessionStatus": "failed"})
+    assert r.text.endswith("<Response><Hangup/></Response>")
+
+
+def test_relay_firma_non_valida():
+    import pytest
+    from starlette.websockets import WebSocketDisconnect
+
+    client, _ = make_relay_client([])
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/voice/relay", headers={"X-Twilio-Signature": "falsa"}) as ws:
+            ws.receive_json()
+
+
+def test_relay_chiamata_in_uscita_usa_destinatario():
+    client, claude = make_relay_client([([text_block("Ok.")], "end_turn")])
+    assistant = client.app.state.assistant
+    with client.websocket_connect("/voice/relay", headers=relay_headers()) as ws:
+        ws.send_json({**SETUP, "direction": "outbound-api", "from": "+15550001111", "to": "+393334445555"})
+        ws.send_json({"type": "prompt", "voicePrompt": "ciao", "last": True})
+        ws.receive_json()
+    assert assistant._phones["voce:CA7"] == "+393334445555"
+
+
+def test_voice_mode_non_valido():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, voice_mode="boh")

@@ -5,6 +5,7 @@ TwiML: saluta, ascolta (riconoscimento vocale in italiano) e invia il testo
 riconosciuto a /voice/respond, in un ciclo fino a fine chiamata.
 """
 
+import json
 import logging
 from xml.sax.saxutils import escape, quoteattr
 
@@ -12,6 +13,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response
 
 from ..security import verify_twilio
+from .relay import relay_twiml
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/voice", dependencies=[Depends(verify_twilio)])
@@ -42,6 +44,8 @@ def _say_and_listen(request: Request, text: str) -> Response:
 
 @router.post("/incoming")
 def incoming(request: Request) -> Response:
+    if request.app.state.settings.voice_mode == "relay":
+        return _twiml(relay_twiml(request.app.state.settings))
     return _say_and_listen(
         request,
         f"Ciao, sono {request.app.state.settings.spoken_name}, "
@@ -103,3 +107,26 @@ def dial_status(request: Request, DialCallStatus: str = Form("")) -> Response:
         _say(request, "Il collega non è raggiungibile. Riprova più tardi oppure chiedimi di aprire un ticket. Ciao.")
         + "<Hangup/>"
     )
+
+
+@router.post("/relay-fine")
+def relay_end(
+    request: Request, HandoffData: str = Form(""), SessionStatus: str = Form("")
+) -> Response:
+    """Twilio chiama questo endpoint quando la sessione ConversationRelay finisce.
+
+    Con `handoffData` ARGO chiede di passare all'operatore o di salutare; se invece
+    il tecnico ha riattaccato o c'è stato un errore, si chiude la chiamata.
+    """
+    try:
+        data = json.loads(HandoffData) if HandoffData else {}
+    except ValueError:
+        data = {}
+    action, text = data.get("azione"), data.get("testo", "")
+    if action == "operatore" and request.app.state.settings.human_support_number:
+        return _transfer(request, text or "Ti passo un collega, resta in linea.")
+    if action in ("operatore", "chiudi"):
+        return _twiml(_say(request, text or "Buon lavoro, ciao!") + "<Hangup/>")
+    if SessionStatus and SessionStatus != "ended":
+        log.warning("Sessione ConversationRelay terminata: %s", SessionStatus)
+    return _twiml("<Hangup/>")

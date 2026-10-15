@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     # Alternative italiane: Polly.Adriano-Neural, Polly.Bianca, Polly.Carla, Polly.Giorgio
     twilio_voice: str = "Polly.Bianca-Neural"
 
+    # Modalità delle chiamate: "gather" (Gather/Say, a turni) oppure "relay"
+    # (ConversationRelay: streaming, interruzioni, voci migliori). Per "relay" serve
+    # l'addendum AI/ML accettato in Twilio → Voice → Settings → Privacy & Security.
+    voice_mode: str = "gather"
+    relay_tts_provider: str = "Amazon"  # Amazon, Google oppure ElevenLabs
+    relay_voice: str = "Bianca-Neural"  # con ElevenLabs: l'ID di una voce italiana
+    relay_transcription_provider: str = "Deepgram"  # Deepgram oppure Google
+    # parole che il riconoscimento vocale deve capire bene (modelli, prodotti)
+    relay_hints: str = "nebbiogeno,DT-400,DT-800,DT-1600,EX-50,EX-100,EX-200,centrale,sensore"
+
     # Numero dell'operatore umano in formato internazionale (es. +39...).
     # Non metterlo nel codice: il repo è pubblico, va solo nelle variabili d'ambiente.
     human_support_number: str = ""
@@ -74,6 +84,14 @@ class Settings(BaseSettings):
     @property
     def spoken_name(self) -> str:
         return self.assistant_spoken_name or self.display_name
+
+    @field_validator("voice_mode")
+    @classmethod
+    def _voice_mode(cls, value: str) -> str:
+        value = value.strip().lower()
+        if value not in ("gather", "relay"):
+            raise ValueError("VOICE_MODE deve essere 'gather' oppure 'relay'")
+        return value
 
     @field_validator("jira_base_url")
     @classmethod
