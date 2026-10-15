@@ -953,3 +953,35 @@ def test_app_pagina_e_pwa():
     assert client.get("/app/icon-64.png").status_code == 404
     sw = client.get("/app/sw.js")
     assert sw.headers["service-worker-allowed"] == "/app" and "/app/token" not in sw.text
+
+
+def test_app_cellulare_per_whatsapp():
+    class FakeMessenger:
+        def __init__(self):
+            self.sent = []
+
+        def send_whatsapp(self, to, body):
+            self.sent.append((to, body))
+
+    messenger = FakeMessenger()
+    claude = FakeClaude([
+        ([tool_block("invia_manuale_whatsapp", {"testo": "*Scheda*"})], "tool_use"),
+        ([text_block("Inviata.")], "end_turn"),
+    ])
+    assistant = Assistant(claude, "m", kb(), None, messenger=messenger)
+    settings = Settings(_env_file=None, twilio_auth_token=TWILIO_TOKEN, public_base_url=PUBLIC_URL)
+    client = TestClient(create_app(settings, assistant))
+    post_twilio(client, "/voice/incoming", {"CallSid": "CA5", "From": "client:argo-app-1", "Telefono": "333 123 4567"})
+    post_twilio(client, "/voice/respond", {"CallSid": "CA5", "From": "client:argo-app-1", "SpeechResult": "mandamela"})
+    assert messenger.sent[0][0] == "+393331234567"
+
+
+def test_app_cellulare_non_valido_ignorato():
+    from argo.channels.app import phone_for_call, remember_phone
+
+    state = SimpleNamespace()
+    settings = Settings(_env_file=None)
+    remember_phone(state, "CA1", "+15551234567", settings)  # non italiano
+    assert phone_for_call(state, "CA1", "client:x") == "client:x"
+    remember_phone(state, "CA2", "0039 333 1234567", settings)
+    assert phone_for_call(state, "CA2", "client:x") == "+393331234567"

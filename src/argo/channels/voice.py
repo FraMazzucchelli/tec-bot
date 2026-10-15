@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import Response
 
 from ..security import verify_twilio
+from .app import phone_for_call, remember_phone
 from .relay import relay_twiml
 
 log = logging.getLogger(__name__)
@@ -43,7 +44,11 @@ def _say_and_listen(request: Request, text: str) -> Response:
 
 
 @router.post("/incoming")
-def incoming(request: Request) -> Response:
+def incoming(
+    request: Request, CallSid: str = Form(""), From: str = Form(""), Telefono: str = Form("")
+) -> Response:
+    if From.startswith("client:"):  # chiamata dall'app: il cellulare arriva come parametro
+        remember_phone(request.app.state, CallSid, Telefono, request.app.state.settings)
     if request.app.state.settings.voice_mode == "relay":
         return _twiml(relay_twiml(request.app.state.settings))
     return _say_and_listen(
@@ -66,6 +71,7 @@ def respond(
     assistant = request.app.state.assistant
     # nelle chiamate partite da ARGO (pagina /chiamami) il tecnico è il destinatario
     technician = To if Direction.startswith("outbound") else From
+    technician = phone_for_call(request.app.state, CallSid, technician)
     text = SpeechResult.strip()
     if not text:
         return _say_and_listen(request, "Scusa, non ho capito. Puoi ripetere?")

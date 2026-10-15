@@ -209,7 +209,10 @@ Configurazione su Twilio, una volta sola:
 
 Se è impostato `CALLBACK_PASSWORD`, l'app chiede lo stesso codice (lo ricorda sul
 telefono). `APP_MAX_CALLS_PER_HOUR` limita le chiamate dall'app (predefinito 30, `0` = nessun limite).
-In chiamata dall'app non c'è un numero di telefono: ARGO non può mandare la scheda su WhatsApp.
+Il tecnico può indicare nell'app il proprio cellulare (facoltativo, resta salvato solo sul
+suo telefono): arriva a Twilio come parametro `Telefono` della chiamata e ARGO lo usa,
+solo per quella chiamata, per mandare le schede su WhatsApp. Sono accettati i cellulari
+italiani e i numeri in `CALLBACK_NUMBERS`; senza numero ARGO dice che non può inviare.
 
 ## Chat sul sito
 

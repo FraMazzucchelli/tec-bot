@@ -27,6 +27,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.concurrency import run_in_threadpool
 
 from ..security import twilio_signature
+from .app import phone_for_call
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -187,6 +188,7 @@ async def relay(websocket: WebSocket) -> None:
                 direction = message.get("direction", "inbound")
                 # nelle chiamate partite da ARGO (pagina /chiamami) il tecnico è il destinatario
                 technician = message.get("to" if direction.startswith("outbound") else "from", "")
+                technician = phone_for_call(app.state, message.get("callSid", ""), technician)
                 continue
 
             if kind == "interrupt":

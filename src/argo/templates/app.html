@@ -104,6 +104,12 @@
     <div class="status" id="status" role="status" aria-live="polite">Parla con ARGO</div>
     <p class="sub" id="sub">Tocca il pulsante e descrivi il problema: risponde dai manuali, apre il ticket o ti passa un collega.</p>
 
+    <div class="code" id="phone-box">
+      <label for="telefono">Il tuo cellulare <span style="font-weight:400;color:var(--muted)">(facoltativo)</span></label>
+      <input id="telefono" type="tel" inputmode="tel" autocomplete="tel" placeholder="333 123 4567">
+      <span class="note">Serve solo per ricevere su WhatsApp le schede e le procedure che chiedi ad ARGO.</span>
+    </div>
+
     <div class="code" id="code-box" hidden>
       <label for="codice">Codice di accesso</label>
       <input id="codice" type="password" autocomplete="off" inputmode="text">
@@ -147,12 +153,14 @@
   var btn = $("call"), label = $("call-label"), statusEl = $("status"), sub = $("sub");
   var timerEl = $("timer"), errorEl = $("error"), controls = $("controls"), muteBtn = $("mute");
   var codeBox = $("code-box"), codeInput = $("codice");
+  var phoneBox = $("phone-box"), phoneInput = $("telefono");
   var device = null, call = null, started = 0, tick = null;
 
   function store(key, value) {
     try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (e) { return null; }
   }
   if (NEEDS_CODE) { codeBox.hidden = false; codeInput.value = store("argo-codice") || ""; }
+  phoneInput.value = store("argo-telefono") || "";
 
   function setState(state, detail) {
     var texts = {
@@ -170,6 +178,7 @@
     btn.setAttribute("aria-label", inCall ? "Riaggancia" : "Chiama ARGO");
     controls.hidden = state !== "live";
     if (NEEDS_CODE) codeBox.hidden = inCall;
+    phoneBox.hidden = inCall;
     if (state === "live") {
       started = Date.now();
       tick = setInterval(function () {
@@ -198,13 +207,16 @@
     setState("connecting");
     getToken().then(function (data) {
       if (NEEDS_CODE) store("argo-codice", codeInput.value);
+      store("argo-telefono", phoneInput.value.trim());
       if (device) { device.destroy(); }
       device = new Twilio.Device(data.token, { codecPreferences: ["opus", "pcmu"], closeProtection: true });
       device.on("error", function (e) { showError("Errore della chiamata: " + (e.message || e.code)); });
       device.on("tokenWillExpire", function () {
         getToken().then(function (d) { device.updateToken(d.token); }).catch(function () {});
       });
-      return device.connect();
+      var params = {};
+      if (phoneInput.value.trim()) params.Telefono = phoneInput.value.trim();
+      return device.connect({ params: params });
     }).then(function (c) {
       call = c;
       call.on("accept", function () { setState("live"); });

@@ -80,6 +80,36 @@ def access_token(
     return signing + "." + _b64(signature)
 
 
+APP_PHONE_TTL_SECONDS = 2 * 3600
+
+
+def remember_phone(state, call_sid: str, raw: str, settings) -> None:
+    """Chiamata dall'app con il cellulare indicato dal tecnico: lo teniamo in memoria
+    per la durata della chiamata, così ARGO può mandargli le schede su WhatsApp.
+    Solo cellulari italiani (o numeri in CALLBACK_NUMBERS), come per "Fatti chiamare"."""
+    from .callback import ITALIAN_MOBILE, _extra_numbers, normalize_number
+
+    if not call_sid or not raw.strip():
+        return
+    number = normalize_number(raw)
+    if not (ITALIAN_MOBILE.match(number) or number in _extra_numbers(settings)):
+        log.warning("App: cellulare non valido, ignorato")
+        return
+    phones = getattr(state, "app_phones", None)
+    if phones is None:
+        phones = state.app_phones = {}
+    now = time.time()
+    for sid in [s for s, (_, t) in phones.items() if now - t > APP_PHONE_TTL_SECONDS]:
+        phones.pop(sid, None)
+    phones[call_sid] = (number, now)
+
+
+def phone_for_call(state, call_sid: str, fallback: str) -> str:
+    """Il cellulare indicato nell'app per questa chiamata, altrimenti `fallback`."""
+    entry = getattr(state, "app_phones", {}).get(call_sid)
+    return entry[0] if entry else fallback
+
+
 class TokenLimiter:
     """Token rilasciati nell'ultima ora (in memoria, per un solo server)."""
 
