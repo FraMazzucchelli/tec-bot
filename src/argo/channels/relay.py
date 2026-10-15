@@ -37,7 +37,21 @@ FILLER_AFTER_SECONDS = 1.5
 FILLER_TEXT = "Un attimo, controllo."
 
 
-def relay_twiml(settings) -> str:
+MAX_HINTS = 100
+
+
+def _hints(settings, codes) -> str:
+    """Suggerimenti per il riconoscimento vocale: quelli configurati più i codici dei
+    manuali, anche nella forma senza trattino ("DT 800") che si sente al telefono."""
+    hints: list[str] = [h.strip() for h in settings.relay_hints.split(",") if h.strip()]
+    for code in codes:
+        base = code.split(".")[0]
+        hints += [base, base.replace("-", " ")]
+    unique = list(dict.fromkeys(hints))
+    return ",".join(unique[:MAX_HINTS])
+
+
+def relay_twiml(settings, codes=()) -> str:
     """TwiML che collega la chiamata al websocket di ARGO."""
     base = settings.public_base_url
     ws_url = "wss://" + base.split("://", 1)[-1] + "/voice/relay"
@@ -58,8 +72,8 @@ def relay_twiml(settings) -> str:
         attrs["speechModel"] = settings.relay_speech_model
     if settings.relay_eot_threshold:
         attrs["eotThreshold"] = settings.relay_eot_threshold
-    if settings.relay_hints:
-        attrs["hints"] = settings.relay_hints
+    if hints := _hints(settings, codes):
+        attrs["hints"] = hints
     relay = " ".join(f"{k}={quoteattr(v)}" for k, v in attrs.items())
     action = quoteattr(base + "/voice/relay-fine")
     return (

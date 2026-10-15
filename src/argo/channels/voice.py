@@ -45,7 +45,8 @@ def _say_and_listen(request: Request, text: str) -> Response:
 @router.post("/incoming")
 def incoming(request: Request) -> Response:
     if request.app.state.settings.voice_mode == "relay":
-        return _twiml(relay_twiml(request.app.state.settings))
+        codes = getattr(request.app.state.assistant, "codes", [])
+        return _twiml(relay_twiml(request.app.state.settings, codes))
     return _say_and_listen(
         request,
         f"Ciao, sono {request.app.state.settings.spoken_name}, "

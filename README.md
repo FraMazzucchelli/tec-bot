@@ -173,7 +173,10 @@ mette più di 1,5 secondi (es. ricerca nei manuali) ARGO dice "Un attimo, contro
 3. Voce: `RELAY_TTS_PROVIDER` (`Amazon`, `Google`, `ElevenLabs`) e `RELAY_VOICE`.
    Predefinito `Amazon` + `Bianca-Neural`, la stessa voce di oggi; con `ElevenLabs`
    metti in `RELAY_VOICE` l'ID di una voce italiana della libreria ElevenLabs.
-4. `RELAY_HINTS`: parole che il riconoscimento deve capire bene (nomi dei modelli).
+4. `RELAY_HINTS`: parole che il riconoscimento deve capire bene. I **codici di prodotto e
+   di errore** presenti nei manuali (es. `DT-800.L`, `MG420`, `E07`) si aggiungono da soli,
+   anche nella forma senza trattino ("DT 800"). Claude riceve la stessa lista e associa i
+   codici trascritti male ("di ti ottocento") a quello giusto; se è incerto chiede conferma.
 5. Meno pause dopo che il tecnico smette di parlare: `RELAY_SPEECH_MODEL` (es. un modello
    Deepgram `flux`) e `RELAY_EOT_THRESHOLD` (0.5–0.9, più basso = risponde prima).
    Vuoti = valori predefiniti di Twilio.

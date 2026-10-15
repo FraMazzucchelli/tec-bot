@@ -109,6 +109,15 @@ CHANNEL_STYLE = {
     ),
 }
 
+VOICE_CODES = """Codici nei manuali: {codes}.
+Al telefono il testo del tecnico arriva dal riconoscimento vocale, che spesso scrive i
+codici come parole, separati o sbagliati (es. "di ti ottocento", "dt 800", "ex duecento",
+"mg 4 20", "e zero sette"). Associa sempre quello che senti al codice più vicino di
+questa lista e usa il codice esatto in `cerca_manuali`. Se due codici sono plausibili o
+non sei sicuro, ripeti il codice per conferma ("Parli del DT-800, giusto?") prima di
+dare valori; se resta poco chiaro, chiedi di dirlo lettera per lettera. Quando pronunci
+un codice ometti trattini e punti (es. "DT 800 L")."""
+
 # Strumenti ammessi per canale: assente = tutti. La prova sul sito è pubblica,
 # quindi niente ticket, operatore o WhatsApp verso numeri altrui.
 CHANNEL_TOOLS: dict[str, set[str]] = {"web": {"cerca_manuali"}}
@@ -214,6 +223,7 @@ class Assistant:
         self._handoffs: set[str] = set()
         self._phones: dict[str, str] = {}
         self._last_seen: dict[str, float] = {}
+        self.codes = knowledge.codes()
 
     @classmethod
     def from_settings(
@@ -338,9 +348,12 @@ class Assistant:
             return events.get_final_message()
 
     def _system(self, channel: str) -> str:
-        return SYSTEM_PROMPT.format(name=self.name) + "\n" + CHANNEL_STYLE.get(
+        system = SYSTEM_PROMPT.format(name=self.name) + "\n" + CHANNEL_STYLE.get(
             channel, ""
         ).format(spoken_name=self.spoken_name)
+        if channel == "voce" and self.codes:
+            system += "\n" + VOICE_CODES.format(codes=", ".join(self.codes))
+        return system
 
     def _tools(self, channel: str) -> list[dict[str, Any]]:
         allowed = CHANNEL_TOOLS.get(channel)

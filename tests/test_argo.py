@@ -875,3 +875,30 @@ def test_relay_streaming_e_operatore_trattiene_il_testo():
     # nessun pezzo detto a voce: la frase la dice /voice/relay-fine prima del trasferimento
     assert end["type"] == "end"
     assert json.loads(end["handoffData"]) == {"azione": "operatore", "testo": "Ti passo un collega."}
+
+
+
+# --- Codici prodotto al telefono ---------------------------------------------
+
+
+def test_codici_dai_manuali():
+    codes = kb().codes()
+    assert "E07" in codes
+    assert len([c for c in codes if c.replace("-", "") == "MG420"]) == 1  # MG420 e MG-420 una volta
+
+
+def test_codici_nel_prompt_della_voce():
+    claude = FakeClaude([([text_block("Ok.")], "end_turn")] * 2)
+    assistant = Assistant(claude, "m", kb(), None)
+    assistant.reply("s1", "ciao", "voce")
+    assistant.reply("s2", "ciao", "telegram")
+    assert "E07" in claude.calls[0]["system"] and "lettera per lettera" in claude.calls[0]["system"]
+    assert "lettera per lettera" not in claude.calls[1]["system"]
+
+
+def test_relay_suggerimenti_con_codici():
+    client, _ = make_relay_client([], relay_hints="nebbiogeno")
+    r = post_twilio(client, "/voice/incoming", {"CallSid": "CA1", "From": "+39333"})
+    hints = r.text.split('hints="')[1].split('"')[0].split(",")
+    assert hints[0] == "nebbiogeno"
+    assert "E07" in hints and ("MG 420" in hints or "MG420" in hints)

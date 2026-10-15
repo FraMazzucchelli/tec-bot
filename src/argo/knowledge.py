@@ -17,6 +17,8 @@ from pathlib import Path
 
 log = logging.getLogger(__name__)
 
+# lettere + numeri, con trattino o spazio opzionale e un suffisso: DT-800.L, MG420, E07
+PRODUCT_CODE = re.compile(r"\b[A-Z]{1,4}[- ]?\d{2,5}(?:\.[A-Z0-9]{1,3})?\b")
 _WORD = re.compile(r"[a-zà-ù0-9]+", re.IGNORECASE)
 _STOPWORDS = {
     "il", "lo", "la", "i", "gli", "le", "un", "uno", "una", "di", "a", "da",
@@ -71,6 +73,19 @@ class KnowledgeBase:
                     log.exception("Manuale non leggibile, lo salto: %s", path)
         log.info("Manuali caricati: %d sezioni da %s", len(passages), root)
         return cls(passages)
+
+    def codes(self, limit: int = 150) -> list[str]:
+        """Codici di prodotto ed errore presenti nei manuali (es. DT-800.L, MG420, E07).
+
+        Servono alla voce: il riconoscimento vocale li riceve come suggerimenti e
+        Claude li usa per capire codici trascritti male ("di ti ottocento").
+        """
+        seen: dict[str, str] = {}
+        for passage in self.passages:
+            for code in PRODUCT_CODE.findall(passage.title + " " + passage.text):
+                key = re.sub(r"[^A-Z0-9]", "", code.upper())
+                seen.setdefault(key, code)  # MG420 e MG-420 sono lo stesso codice
+        return sorted(seen.values())[:limit]
 
     def search(self, query: str, limit: int = 3) -> list[Hit]:
         terms = _tokens(query)
