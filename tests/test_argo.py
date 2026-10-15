@@ -945,7 +945,7 @@ def test_app_limite_token():
 def test_app_pagina_e_pwa():
     client = make_app_client(callback_password="x")
     html = client.get("/app").text
-    assert "var NEEDS_CODE = true;" in html and "{{" not in html
+    assert "var NEEDS_CODE = true;" in html and "var TWILIO_READY = true;" in html and "{{" not in html
     assert 'rel="manifest"' in html
     manifest = client.get("/app/manifest.webmanifest").json()
     assert manifest["start_url"] == "/app" and manifest["display"] == "standalone"
@@ -987,3 +987,67 @@ def test_app_cellulare_non_valido_ignorato():
     assert phone_for_call(state, "CA3", "client:x") == "+447700900123"
     remember_phone(state, "CA2", "0039 333 1234567", settings)
     assert phone_for_call(state, "CA2", "client:x") == "+393331234567"
+
+
+# --- App: voce del telefono (testo dal browser) ------------------------------
+
+SESSIONE_APP = "abcdef0123456789abcdef"
+
+
+def test_app_messaggio_usa_lo_stile_voce():
+    claude = FakeClaude([([text_block("Il DT-800 è pronto in 12 minuti.")], "end_turn")])
+    settings = Settings(_env_file=None)
+    client = TestClient(create_app(settings, Assistant(claude, "m", kb(), None)))
+    r = client.post("/app/messaggio", json={"sessione": SESSIONE_APP, "testo": "dt 800 da freddo"})
+    assert r.json() == {"risposta": "Il DT-800 è pronto in 12 minuti."}
+    assert "telefono" in claude.calls[0]["system"]
+    assert "apri_ticket" in [t["name"] for t in claude.calls[0]["tools"]]
+
+
+def test_app_messaggio_operatore_e_saluto():
+    claude = FakeClaude([
+        ([tool_block("passa_a_operatore", {"motivo": "richiesta"})], "tool_use"),
+        ([text_block("Ti passo un collega.")], "end_turn"),
+    ])
+    settings = Settings(_env_file=None, human_support_number=OPERATORE)
+    client = TestClient(create_app(settings, Assistant(claude, "m", kb(), None, OPERATORE)))
+    r = client.post("/app/messaggio", json={"sessione": SESSIONE_APP, "testo": "un collega"})
+    assert r.json() == {"risposta": "Ti passo un collega.", "operatore": OPERATORE, "fine": True}
+    r = client.post("/app/messaggio", json={"sessione": SESSIONE_APP, "testo": "Grazie ciao"})
+    assert r.json()["fine"] is True
+
+
+def test_app_messaggio_codice_e_validazione():
+    client = make_app_client(callback_password="x")
+    body = {"sessione": SESSIONE_APP, "testo": "ciao"}
+    assert client.post("/app/messaggio", json=body).status_code == 403
+    assert client.post("/app/messaggio", json={**body, "codice": "x", "sessione": "corta"}).status_code == 400
+    assert client.post("/app/messaggio", json={**body, "codice": "x", "testo": " "}).status_code == 400
+
+
+def test_app_messaggio_whatsapp_al_cellulare():
+    class FakeMessenger:
+        def __init__(self):
+            self.sent = []
+
+        def send_whatsapp(self, to, body):
+            self.sent.append(to)
+
+    messenger = FakeMessenger()
+    claude = FakeClaude([
+        ([tool_block("invia_manuale_whatsapp", {"testo": "*Scheda*"})], "tool_use"),
+        ([text_block("Inviata.")], "end_turn"),
+    ])
+    client = TestClient(create_app(Settings(_env_file=None), Assistant(claude, "m", kb(), None, messenger=messenger)))
+    client.post("/app/messaggio", json={"sessione": SESSIONE_APP, "testo": "mandamela", "telefono": "333 123 4567"})
+    assert messenger.sent == ["+393331234567"]
+
+
+def test_app_fine_cancella_conversazione():
+    claude = FakeClaude([([text_block("ok")], "end_turn")])
+    client = TestClient(create_app(Settings(_env_file=None), Assistant(claude, "m", kb(), None)))
+    client.post("/app/messaggio", json={"sessione": SESSIONE_APP, "testo": "ciao"})
+    assistant = client.app.state.assistant
+    assert assistant._history
+    client.post("/app/fine", json={"sessione": SESSIONE_APP})
+    assert not assistant._history

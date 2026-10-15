@@ -89,6 +89,24 @@
   }
   .install button { font: 700 .95rem/1 var(--body); background: var(--yellow); color: var(--bg); border: 0; border-radius: 8px; padding: 10px 14px; cursor: pointer; flex: none; }
   .note { color: var(--muted); font-size: .82rem; margin: 0; }
+  .modes { display: flex; background: var(--panel); border: 1px solid var(--line); border-radius: 99px; padding: 4px; gap: 4px; width: 100%; max-width: 360px; }
+  .modes button {
+    flex: 1; font: 600 .92rem/1.2 var(--body); color: var(--muted); background: transparent;
+    border: 0; border-radius: 99px; padding: 10px 8px; cursor: pointer;
+  }
+  .modes button[aria-checked="true"] { background: var(--text); color: var(--bg); }
+  .modes button:disabled { opacity: .45; cursor: default; }
+  .modes small { display: block; font-weight: 400; font-size: .78rem; }
+  .heard { color: var(--muted); font-style: italic; min-height: 1.5em; max-width: 24em; }
+  .log { width: 100%; display: flex; flex-direction: column; gap: 8px; max-height: 32vh; overflow-y: auto; text-align: left; }
+  .line { padding: 9px 12px; border-radius: 10px; max-width: 90%; line-height: 1.4; overflow-wrap: anywhere; }
+  .line.me { align-self: flex-end; background: var(--panel); border: 1px solid var(--line); }
+  .line.bot { align-self: flex-start; background: var(--text); color: var(--bg); }
+  .operator {
+    display: grid; gap: 8px; background: var(--panel); border: 2px solid var(--yellow);
+    border-radius: 12px; padding: 14px 16px; width: 100%; max-width: 360px;
+  }
+  .operator a { display: block; text-align: center; background: var(--yellow); color: var(--bg); font-weight: 800; text-decoration: none; padding: 14px; border-radius: 10px; font-size: 1.1rem; }
   :focus-visible { outline: 3px solid var(--yellow); outline-offset: 3px; }
   @media (prefers-reduced-motion: reduce) { .call.live::before { animation: none; } .call { transition: none; } }
 </style>
@@ -103,6 +121,11 @@
   <main>
     <div class="status" id="status" role="status" aria-live="polite">Parla con ARGO</div>
     <p class="sub" id="sub">Tocca il pulsante e descrivi il problema: risponde dai manuali, apre il ticket o ti passa un collega.</p>
+
+    <div class="modes" id="modes" role="radiogroup" aria-label="Tipo di voce">
+      <button type="button" role="radio" data-modo="telefono" aria-checked="true">Voce del telefono<small>gratis</small></button>
+      <button type="button" role="radio" data-modo="twilio" aria-checked="false">Voce Twilio<small id="twilio-note">più naturale</small></button>
+    </div>
 
     <div class="code" id="phone-box">
       <label for="telefono">Il tuo cellulare <span style="font-weight:400;color:var(--muted)">(facoltativo)</span></label>
@@ -122,12 +145,19 @@
       </span>
     </button>
     <div class="timer" id="timer"></div>
+    <div class="heard" id="heard" aria-live="polite"></div>
 
     <div class="controls" id="controls" hidden>
       <button class="ctrl" id="mute" type="button" aria-pressed="false">Silenzia microfono</button>
     </div>
 
+    <div class="operator" id="operator" hidden>
+      <span>Chiama un collega dell'assistenza:</span>
+      <a id="operator-link" href="#">Chiama</a>
+    </div>
+
     <div class="error" id="error" role="alert" hidden></div>
+    <div class="log" id="log" aria-label="Conversazione"></div>
   </main>
 
   <footer>
@@ -141,7 +171,7 @@
       <button type="button" id="install-btn">Installa</button>
     </div>
     <p class="note" id="ios-note" hidden>Su iPhone: tocca Condividi e poi "Aggiungi alla schermata Home".</p>
-    <p class="note">Serve il permesso al microfono. La chiamata passa da internet: con poca rete usa il numero di telefono dell'assistenza.</p>
+    <p class="note">Serve il permesso al microfono e la connessione internet. "Voce del telefono" usa il riconoscimento vocale del browser (Chrome o Safari): parla dopo il segnale "Ti ascolto".</p>
   </footer>
 </div>
 
@@ -149,12 +179,16 @@
 <script>
 (function () {
   var NEEDS_CODE = {{SERVE_CODICE}};
+  var TWILIO_READY = {{TWILIO_PRONTO}};
   var $ = function (id) { return document.getElementById(id); };
   var btn = $("call"), label = $("call-label"), statusEl = $("status"), sub = $("sub");
   var timerEl = $("timer"), errorEl = $("error"), controls = $("controls"), muteBtn = $("mute");
   var codeBox = $("code-box"), codeInput = $("codice");
   var phoneBox = $("phone-box"), phoneInput = $("telefono");
-  var device = null, call = null, started = 0, tick = null;
+  var heard = $("heard"), logEl = $("log"), modesEl = $("modes");
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var mode = "telefono";
+  var device = null, call = null, browserCall = null, started = 0, tick = null;
 
   function store(key, value) {
     try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch (e) { return null; }
@@ -162,57 +196,91 @@
   if (NEEDS_CODE) { codeBox.hidden = false; codeInput.value = store("argo-codice") || ""; }
   phoneInput.value = store("argo-telefono") || "";
 
+  // scelta della voce
+  var modeButtons = modesEl.querySelectorAll("button");
+  if (!TWILIO_READY) { modeButtons[1].disabled = true; $("twilio-note").textContent = "non configurata"; }
+  function setMode(m) {
+    if (m === "twilio" && !TWILIO_READY) m = "telefono";
+    mode = m;
+    modeButtons.forEach(function (b) { b.setAttribute("aria-checked", String(b.dataset.modo === m)); });
+    store("argo-voce", m);
+  }
+  modeButtons.forEach(function (b) { b.addEventListener("click", function () { if (!inCall()) setMode(b.dataset.modo); }); });
+  setMode(store("argo-voce") || (TWILIO_READY ? "twilio" : "telefono"));
+
+  function inCall() { return !!call || !!browserCall || btn.classList.contains("hangup"); }
+
   function setState(state, detail) {
     var texts = {
       idle: ["Parla con ARGO", "Tocca il pulsante e descrivi il problema: risponde dai manuali, apre il ticket o ti passa un collega."],
       connecting: ["Collegamento…", "Consenti l'uso del microfono se il telefono lo chiede."],
-      live: ["In linea con ARGO", "Parla normalmente. Puoi interromperlo quando vuoi."],
+      live: ["In linea con ARGO", mode === "twilio" ? "Parla normalmente. Puoi interromperlo quando vuoi." : "Parla quando vedi “Ti ascolto”."],
       ended: ["Chiamata terminata", "Tocca di nuovo per richiamare."]
     };
     statusEl.textContent = texts[state][0];
     sub.textContent = detail || texts[state][1];
-    var inCall = state === "connecting" || state === "live";
-    btn.classList.toggle("hangup", inCall);
+    var active = state === "connecting" || state === "live";
+    btn.classList.toggle("hangup", active);
     btn.classList.toggle("live", state === "live");
-    label.textContent = inCall ? "Riaggancia" : "Chiama";
-    btn.setAttribute("aria-label", inCall ? "Riaggancia" : "Chiama ARGO");
-    controls.hidden = state !== "live";
-    if (NEEDS_CODE) codeBox.hidden = inCall;
-    phoneBox.hidden = inCall;
+    label.textContent = active ? "Riaggancia" : "Chiama";
+    btn.setAttribute("aria-label", active ? "Riaggancia" : "Chiama ARGO");
+    controls.hidden = !(state === "live" && mode === "twilio");
+    if (NEEDS_CODE) codeBox.hidden = active;
+    phoneBox.hidden = active;
+    modesEl.hidden = active;
+    if (!active) heard.textContent = "";
+    clearInterval(tick);
     if (state === "live") {
       started = Date.now();
       tick = setInterval(function () {
         var s = Math.floor((Date.now() - started) / 1000);
         timerEl.textContent = String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
       }, 500);
-    } else {
-      clearInterval(tick); if (state !== "ended") timerEl.textContent = "";
-    }
+    } else if (state !== "ended") { timerEl.textContent = ""; }
   }
+  function setSub(text) { sub.textContent = text; }
   function showError(msg) { errorEl.textContent = msg; errorEl.hidden = !msg; }
-
-  function getToken() {
-    return fetch("/app/token", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ codice: codeInput.value })
-    }).then(function (r) {
-      return r.json().then(function (d) { if (!r.ok) throw new Error(d.errore || "Errore del server."); return d; });
-    });
+  function addLine(kind, text) {
+    var el = document.createElement("div");
+    el.className = "line " + kind; el.textContent = text;
+    logEl.appendChild(el); logEl.scrollTop = logEl.scrollHeight;
+  }
+  function showOperator(number) {
+    if (!number) return;
+    $("operator-link").href = "tel:" + number.replace(/\s/g, "");
+    $("operator-link").textContent = "Chiama " + number;
+    $("operator").hidden = false;
+  }
+  function saveFields() {
+    if (NEEDS_CODE) store("argo-codice", codeInput.value);
+    store("argo-telefono", phoneInput.value.trim());
+  }
+  function newId() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID().replace(/-/g, "");
+    return (Date.now().toString(36) + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 32);
+  }
+  function postJson(url, body) {
+    return fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().catch(function () { return {}; }).then(function (d) {
+        if (!r.ok) { var e = new Error(d.errore || "Errore del server."); e.code = d.codice; throw e; }
+        return d;
+      }); });
+  }
+  function codeError(e) {
+    if (e && e.code === "codice") { try { localStorage.removeItem("argo-codice"); } catch (x) {} }
   }
 
-  function start() {
-    showError("");
-    if (!window.Twilio || !Twilio.Device) { showError("Non riesco a caricare la parte vocale. Controlla la connessione e ricarica la pagina."); return; }
-    if (NEEDS_CODE && !codeInput.value) { codeInput.focus(); showError("Inserisci il codice di accesso."); return; }
+  // ---- Voce Twilio: chiamata vera via internet ---------------------------------
+  function startTwilio() {
+    if (!window.Twilio || !Twilio.Device) { showError("Non riesco a caricare la voce Twilio. Controlla la connessione o usa “Voce del telefono”."); return; }
     setState("connecting");
-    getToken().then(function (data) {
-      if (NEEDS_CODE) store("argo-codice", codeInput.value);
-      store("argo-telefono", phoneInput.value.trim());
+    postJson("/app/token", { codice: codeInput.value }).then(function (data) {
+      saveFields();
       if (device) { device.destroy(); }
       device = new Twilio.Device(data.token, { codecPreferences: ["opus", "pcmu"], closeProtection: true });
       device.on("error", function (e) { showError("Errore della chiamata: " + (e.message || e.code)); });
       device.on("tokenWillExpire", function () {
-        getToken().then(function (d) { device.updateToken(d.token); }).catch(function () {});
+        postJson("/app/token", { codice: codeInput.value }).then(function (d) { device.updateToken(d.token); }).catch(function () {});
       });
       var params = {};
       if (phoneInput.value.trim()) params.Telefono = phoneInput.value.trim();
@@ -220,24 +288,118 @@
     }).then(function (c) {
       call = c;
       call.on("accept", function () { setState("live"); });
-      call.on("disconnect", function () { call = null; setState("ended"); });
-      call.on("cancel", function () { call = null; setState("ended"); });
-      call.on("reject", function () { call = null; setState("ended"); });
+      ["disconnect", "cancel", "reject"].forEach(function (ev) { call.on(ev, function () { call = null; setState("ended"); }); });
       call.on("error", function (e) { showError("Errore della chiamata: " + (e.message || e.code)); });
       call.on("mute", function (m) { muteBtn.setAttribute("aria-pressed", String(m)); muteBtn.textContent = m ? "Riattiva microfono" : "Silenzia microfono"; });
     }).catch(function (e) {
-      call = null; setState("idle");
+      call = null; setState("idle"); codeError(e);
       var msg = e && e.message ? e.message : "Chiamata non riuscita.";
       if (/permission|NotAllowed|31208|31401/i.test(msg)) msg = "Serve il permesso al microfono: abilitalo nelle impostazioni del browser e riprova.";
       showError(msg);
-      if (/codice/i.test(msg)) { try { localStorage.removeItem("argo-codice"); } catch (x) {} }
     });
+  }
+
+  // ---- Voce del telefono: riconoscimento e sintesi del browser -----------------
+  function pickVoice() {
+    if (!window.speechSynthesis) return null;
+    var voices = speechSynthesis.getVoices().filter(function (v) { return /^it/i.test(v.lang); });
+    var good = voices.filter(function (v) { return /google|natural|neural|premium|enhanced|alice|federica/i.test(v.name); });
+    return good[0] || voices[0] || null;
+  }
+  if (window.speechSynthesis) { speechSynthesis.getVoices(); speechSynthesis.onvoiceschanged = function () {}; }
+
+  function speak(text, done) {
+    if (!window.speechSynthesis) { if (done) done(); return; }
+    speechSynthesis.cancel();
+    var u = new SpeechSynthesisUtterance(text);
+    u.lang = "it-IT"; u.rate = 1.05;
+    var v = pickVoice(); if (v) u.voice = v;
+    var finished = false;
+    var finish = function () { if (!finished) { finished = true; if (done) done(); } };
+    u.onend = finish; u.onerror = finish;
+    setSub("ARGO sta parlando…");
+    speechSynthesis.speak(u);
+  }
+
+  function listen() {
+    var bc = browserCall;
+    if (!bc || !bc.active) return;
+    var rec = new SR();
+    rec.lang = "it-IT"; rec.interimResults = true; rec.maxAlternatives = 1; rec.continuous = false;
+    var finalText = "";
+    rec.onresult = function (e) {
+      var interim = "";
+      for (var i = e.resultIndex; i < e.results.length; i++) {
+        if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+        else interim += e.results[i][0].transcript;
+      }
+      heard.textContent = (finalText + " " + interim).trim();
+    };
+    rec.onerror = function (e) {
+      if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+        showError("Serve il permesso al microfono: abilitalo nelle impostazioni del browser e riprova.");
+        endBrowser();
+      }
+    };
+    rec.onend = function () {
+      if (bc.rec === rec) bc.rec = null;
+      if (!bc.active) return;
+      var text = finalText.trim();
+      if (text) ask(text); else listen(); // silenzio: si continua ad ascoltare
+    };
+    bc.rec = rec;
+    setSub("Ti ascolto…");
+    try { rec.start(); } catch (x) { setTimeout(listen, 300); }
+  }
+
+  function ask(text) {
+    var bc = browserCall;
+    addLine("me", text); heard.textContent = "";
+    setSub("ARGO sta rispondendo…");
+    postJson("/app/messaggio", {
+      sessione: bc.session, testo: text, codice: codeInput.value, telefono: phoneInput.value.trim()
+    }).then(function (d) {
+      if (!bc.active) return;
+      addLine("bot", d.risposta);
+      speak(d.risposta, function () {
+        if (!bc.active) return;
+        if (d.operatore) showOperator(d.operatore);
+        if (d.fine) endBrowser(); else listen();
+      });
+    }).catch(function (e) {
+      if (!bc.active) return;
+      codeError(e); showError(e.message);
+      if (e.code === "codice") endBrowser(); else listen();
+    });
+  }
+
+  function startBrowser() {
+    if (!SR) { showError("Questo browser non riconosce la voce: usa Chrome o Safari aggiornati, oppure la voce Twilio."); return; }
+    saveFields();
+    browserCall = { session: newId(), active: true, rec: null };
+    setState("live");
+    // il saluto parte dal tocco sul pulsante: su iPhone sblocca la sintesi vocale
+    speak("Ciao, sono ARGO. Qual è il problema?", listen);
+  }
+
+  function endBrowser() {
+    var bc = browserCall;
+    if (!bc) return;
+    bc.active = false;
+    if (bc.rec) { try { bc.rec.abort(); } catch (x) {} }
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    postJson("/app/fine", { sessione: bc.session }).catch(function () {});
+    browserCall = null;
+    setState("ended");
   }
 
   btn.addEventListener("click", function () {
     if (call) { call.disconnect(); return; }
+    if (browserCall) { endBrowser(); return; }
     if (btn.classList.contains("hangup")) return; // collegamento in corso
-    start();
+    showError(""); $("operator").hidden = true; logEl.textContent = "";
+    if (NEEDS_CODE && !codeInput.value) { codeInput.focus(); showError("Inserisci il codice di accesso."); return; }
+    if (mode === "twilio") startTwilio(); else startBrowser();
   });
   muteBtn.addEventListener("click", function () { if (call) call.mute(!call.isMuted()); });
 

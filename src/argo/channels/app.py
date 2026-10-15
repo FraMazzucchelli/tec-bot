@@ -1,5 +1,10 @@
 """App di ARGO (PWA): il tecnico parla con ARGO dal telefono, via internet.
 
+Due modi di parlare:
+- "Voce Twilio": chiamata vera dal browser (Twilio Voice SDK), descritta qui sotto;
+- "Voce del telefono": riconoscimento e sintesi del browser, ad ARGO arriva solo il
+  testo (/app/messaggio). Gratis lato Twilio: pensata per lo sviluppo e le prove.
+
 La chiamata parte dal browser con il Twilio Voice SDK e arriva a Twilio come una
 normale telefonata verso la TwiML App, che punta a /voice/incoming: da lì in poi
 il flusso è lo stesso del numero di telefono (Gather o ConversationRelay, ricerca
@@ -140,8 +145,10 @@ def _configured(s) -> bool:
 @router.get("/app", response_class=HTMLResponse)
 def app_page(request: Request) -> HTMLResponse:
     s = request.app.state.settings
-    html = TEMPLATE.replace("{{SERVE_CODICE}}", "true" if s.callback_password else "false").replace(
-        "{{NOME}}", s.display_name
+    html = (
+        TEMPLATE.replace("{{SERVE_CODICE}}", "true" if s.callback_password else "false")
+        .replace("{{TWILIO_PRONTO}}", "true" if _configured(s) else "false")
+        .replace("{{NOME}}", s.display_name)
     )
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 
@@ -155,10 +162,8 @@ def app_slash(request: Request) -> HTMLResponse:
 def app_token(body: TokenRequest, request: Request) -> JSONResponse:
     state = request.app.state
     s = state.settings
-    if not s.app_enabled:
-        return JSONResponse({"errore": "L'app è disattivata."}, status_code=403)
-    if s.callback_password and not hmac.compare_digest(body.codice.encode(), s.callback_password.encode()):
-        return JSONResponse({"errore": "Codice di accesso non corretto.", "codice": "codice"}, status_code=403)
+    if (problem := _check_code(s, body.codice)) is not None:
+        return problem
     if not _configured(s):
         log.warning("App: mancano TWILIO_API_KEY, TWILIO_API_SECRET o TWILIO_TWIML_APP_SID")
         return JSONResponse({"errore": "La voce nell'app non è ancora configurata sul server."}, status_code=503)
@@ -172,6 +177,94 @@ def app_token(body: TokenRequest, request: Request) -> JSONResponse:
         s.twilio_account_sid, s.twilio_api_key, s.twilio_api_secret, identity, s.twilio_twiml_app_sid
     )
     return JSONResponse({"token": token, "identita": identity, "scadenza": TOKEN_TTL_SECONDS})
+
+
+# --- Voce del telefono (gratis) ------------------------------------------------
+# Il riconoscimento e la sintesi vocale li fa il browser del tecnico: ad ARGO arriva
+# solo il testo. Nessun costo Twilio, solo Claude. Stesso comportamento del telefono
+# (stile breve, manuali, ticket, WhatsApp, collega), ma il collega si chiama con un
+# pulsante nell'app invece del trasferimento di chiamata.
+
+GOODBYE_WORDS = ("grazie ciao", "arrivederci", "basta così", "ho finito")
+SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{16,64}$")
+
+
+class AppMessage(BaseModel):
+    sessione: str = ""
+    testo: str = ""
+    codice: str = ""
+    telefono: str = ""
+
+
+def _check_code(s, codice: str) -> JSONResponse | None:
+    if not s.app_enabled:
+        return JSONResponse({"errore": "L'app è disattivata."}, status_code=403)
+    if s.callback_password and not hmac.compare_digest(codice.encode(), s.callback_password.encode()):
+        return JSONResponse({"errore": "Codice di accesso non corretto.", "codice": "codice"}, status_code=403)
+    return None
+
+
+def _valid_phone(raw: str) -> str:
+    from .callback import normalize_number
+
+    if not raw.strip():
+        return ""
+    number = normalize_number(raw)
+    return number if INTERNATIONAL_NUMBER.match(number) else ""
+
+
+@router.post("/app/messaggio")
+def app_message(body: AppMessage, request: Request) -> JSONResponse:
+    state = request.app.state
+    s = state.settings
+    if (problem := _check_code(s, body.codice)) is not None:
+        return problem
+    if not SESSION_ID.match(body.sessione):
+        return JSONResponse({"errore": "Conversazione non valida: riaggancia e richiama."}, status_code=400)
+    text = body.testo.strip()
+    if not text:
+        return JSONResponse({"errore": "Non ho sentito nulla."}, status_code=400)
+    if len(text) > s.web_chat_max_chars:
+        return JSONResponse({"errore": "Messaggio troppo lungo."}, status_code=400)
+
+    from .web import WebChatLimiter
+
+    session = f"app:{body.sessione}"
+    if not hasattr(state, "app_text_limiter"):
+        state.app_text_limiter = WebChatLimiter(s.web_chat_max_per_hour, 60)
+    if (limit := state.app_text_limiter.check(session)) is not None:
+        message = (
+            "Questa conversazione è molto lunga: riaggancia e richiama."
+            if limit == "conversazione"
+            else "Troppi messaggi nell'ultima ora: riprova più tardi."
+        )
+        return JSONResponse({"errore": message}, status_code=429)
+    state.app_text_limiter.record(session)
+
+    assistant = state.assistant
+    if any(w in text.lower() for w in GOODBYE_WORDS):
+        assistant.reset(session)
+        return JSONResponse({"risposta": "Buon lavoro, ciao!", "fine": True})
+    try:
+        answer = assistant.reply(session, text, "voce", phone=_valid_phone(body.telefono))
+    except Exception:
+        log.exception("Errore nella voce dell'app")
+        return JSONResponse({"errore": "Non riesco a rispondere in questo momento. Riprova."}, status_code=502)
+
+    result: dict = {"risposta": answer}
+    if assistant.take_handoff(session):
+        assistant.reset(session)
+        result["operatore"] = s.human_support_number
+        result["fine"] = True
+    return JSONResponse(result)
+
+
+@router.post("/app/fine")
+def app_end(body: AppMessage, request: Request) -> JSONResponse:
+    """Il tecnico ha riagganciato: la conversazione si cancella subito."""
+    if SESSION_ID.match(body.sessione):
+        request.app.state.assistant.reset(f"app:{body.sessione}")
+    return JSONResponse({"ok": True})
 
 
 MANIFEST = {

@@ -195,10 +195,19 @@ Per tornare al vecchio flusso basta `VOICE_MODE=gather`.
 
 All'indirizzo `/app` c'è una web app installabile sul telefono ("Aggiungi alla schermata
 Home"): un pulsante per **parlare con ARGO via internet**, senza chiamare un numero.
-La chiamata parte dal browser con il Twilio Voice SDK e segue lo stesso flusso del
-telefono (manuali, ticket, passaggio a un collega, ConversationRelay se attivo).
+Il tecnico sceglie tra due voci:
 
-Configurazione su Twilio, una volta sola:
+- **Voce del telefono (gratis)** – riconoscimento e sintesi vocale li fa il browser
+  (Chrome o Safari); ad ARGO arriva solo il testo (`POST /app/messaggio`), con lo stesso
+  comportamento del telefono: risposte brevi, manuali, ticket, WhatsApp. Il collega si
+  chiama con un pulsante che compare nell'app. **Nessun costo Twilio e nessun numero
+  di telefono**: è il modo consigliato per sviluppare e provare. Non serve configurare nulla.
+  Limiti: voce del telefono meno naturale, non si può interrompere ARGO mentre parla.
+- **Voce Twilio** – chiamata vera dal browser con il Twilio Voice SDK, stesso flusso del
+  numero (ConversationRelay se attivo). Si attiva configurando le variabili qui sotto;
+  finché mancano, nell'app compare "non configurata".
+
+Configurazione su Twilio per la voce Twilio, una volta sola:
 1. *Account → API keys & tokens → Create API key* (tipo Standard): copia SID (`SK…`)
    e secret in `TWILIO_API_KEY` e `TWILIO_API_SECRET`. Il secret si vede solo una volta.
 2. *Voice → TwiML Apps → Create new TwiML App*: Voice Request URL
