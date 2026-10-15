@@ -2,7 +2,8 @@
 
 Twilio si occupa di riconoscimento vocale e sintesi in streaming e parla con ARGO
 su un websocket: a ogni frase del tecnico arriva un messaggio `prompt`, ARGO
-risponde con messaggi `text`. Rispetto a <Gather>/<Say>:
+risponde con messaggi `text`, inviati a pezzi mentre Claude scrive (streaming):
+la voce parte con la prima frase. Rispetto a <Gather>/<Say>:
 - il tecnico può interrompere il bot mentre parla;
 - non c'è il limite di ~15 secondi per la risposta del webhook;
 - si possono usare voci più naturali (ElevenLabs, Google, Amazon).
@@ -53,6 +54,10 @@ def relay_twiml(settings) -> str:
     }
     if settings.relay_voice:
         attrs["voice"] = settings.relay_voice
+    if settings.relay_speech_model:
+        attrs["speechModel"] = settings.relay_speech_model
+    if settings.relay_eot_threshold:
+        attrs["eotThreshold"] = settings.relay_eot_threshold
     if settings.relay_hints:
         attrs["hints"] = settings.relay_hints
     relay = " ".join(f"{k}={quoteattr(v)}" for k, v in attrs.items())
@@ -88,6 +93,76 @@ async def _end(websocket: WebSocket, action: str, text: str) -> None:
     )
 
 
+class _Turn:
+    """Una risposta di ARGO in corso: si può interrompere se il tecnico parla sopra."""
+
+    def __init__(self) -> None:
+        self.interrupted = False
+        self.task: asyncio.Task | None = None
+
+
+async def _answer(websocket, settings, assistant, session, technician, text, turn: _Turn) -> None:
+    """Genera la risposta in un thread e la manda a Twilio a pezzi, mentre arriva."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue = asyncio.Queue()
+    done = object()
+
+    def on_text(chunk: str) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, chunk)
+
+    def work() -> str:
+        try:
+            return assistant.converse(session, text, "voce", technician, on_text=on_text)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, done)
+
+    future = asyncio.ensure_future(run_in_threadpool(work))
+    sent = False  # qualcosa è già stato detto in questo turno
+    held: list[str] = []  # testo trattenuto quando ARGO sta passando a un operatore
+    first = True
+    while True:
+        try:
+            timeout = FILLER_AFTER_SECONDS if first and not sent else None
+            chunk = await asyncio.wait_for(queue.get(), timeout)
+        except asyncio.TimeoutError:
+            if not turn.interrupted:
+                await _send_text(websocket, FILLER_TEXT)
+            first = False
+            continue
+        first = False
+        if chunk is done:
+            break
+        if turn.interrupted:
+            continue  # il tecnico ha parlato sopra: il resto non si dice
+        if assistant.handoff_pending(session):
+            held.append(chunk)  # lo dirà /voice/relay-fine prima di trasferire
+            continue
+        await websocket.send_json({"type": "text", "token": chunk, "last": False})
+        sent = True
+
+    try:
+        answer = await future
+    except Exception:
+        log.exception("Errore durante la risposta vocale (ConversationRelay)")
+        answer = "Scusa, ho un problema tecnico in questo momento."
+        if settings.human_support_number:
+            await _end(websocket, "operatore", answer + " Ti passo un collega.")
+            return
+        await _send_text(websocket, answer + " Riprova tra poco.")
+        return
+
+    if assistant.take_handoff(session):
+        assistant.reset(session)
+        await _end(websocket, "operatore", "".join(held).strip() or "Ti passo un collega, resta in linea.")
+        return
+    if turn.interrupted:
+        return
+    if sent:
+        await websocket.send_json({"type": "text", "token": "", "last": True})
+    else:
+        await _send_text(websocket, answer)  # es. risposta di ripiego senza streaming
+
+
 @router.websocket("/voice/relay")
 async def relay(websocket: WebSocket) -> None:
     app = websocket.app
@@ -101,6 +176,7 @@ async def relay(websocket: WebSocket) -> None:
     assistant = app.state.assistant
     session = ""
     technician = ""
+    turn = _Turn()
     try:
         while True:
             message = await websocket.receive_json()
@@ -113,14 +189,26 @@ async def relay(websocket: WebSocket) -> None:
                 technician = message.get("to" if direction.startswith("outbound") else "from", "")
                 continue
 
+            if kind == "interrupt":
+                turn.interrupted = True
+                continue
+
             if kind == "error":
                 log.error("ConversationRelay: %s", message.get("description", ""))
                 continue
 
             if kind != "prompt" or not message.get("last", True):
-                continue  # interrupt, dtmf, frasi parziali: nulla da fare
+                continue  # dtmf, frasi parziali: nulla da fare
 
             text = (message.get("voicePrompt") or "").strip()
+            # una risposta alla volta: la cronologia della chiamata è una sola
+            if turn.task is not None and not turn.task.done():
+                turn.interrupted = True
+                try:
+                    await turn.task
+                except Exception:
+                    log.exception("Errore nella risposta interrotta")
+
             if not text:
                 await _send_text(websocket, "Scusa, non ho capito. Puoi ripetere?")
                 continue
@@ -129,30 +217,16 @@ async def relay(websocket: WebSocket) -> None:
                 await _end(websocket, "chiudi", "Buon lavoro, ciao!")
                 return
 
-            work = asyncio.ensure_future(
-                run_in_threadpool(assistant.reply, session, text, "voce", technician)
+            turn = _Turn()
+            turn.task = asyncio.ensure_future(
+                _answer(websocket, settings, assistant, session, technician, text, turn)
             )
-            try:
-                done, _ = await asyncio.wait({work}, timeout=FILLER_AFTER_SECONDS)
-                if not done:
-                    await _send_text(websocket, FILLER_TEXT)
-                answer = await work
-            except Exception:
-                log.exception("Errore durante la risposta vocale (ConversationRelay)")
-                answer = "Scusa, ho un problema tecnico in questo momento."
-                if settings.human_support_number:
-                    await _end(websocket, "operatore", answer + " Ti passo un collega.")
-                    return
-                await _send_text(websocket, answer + " Riprova tra poco.")
-                continue
-
-            if assistant.take_handoff(session):
-                assistant.reset(session)
-                await _end(websocket, "operatore", answer or "Ti passo un collega, resta in linea.")
-                return
-            await _send_text(websocket, answer)
     except WebSocketDisconnect:
         pass  # il tecnico ha riattaccato
     finally:
-        if session:
-            log.info("Fine sessione ConversationRelay")
+        if turn.task is not None and not turn.task.done():
+            turn.interrupted = True
+            try:
+                await turn.task
+            except Exception:
+                pass

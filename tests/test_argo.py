@@ -28,6 +28,8 @@ class FakeClaude:
         self.messages = self
 
     def create(self, **kwargs):
+        if isinstance(kwargs.get("system"), list):  # prompt in cache: lo riportiamo a testo
+            kwargs = {**kwargs, "system": "".join(b["text"] for b in kwargs["system"])}
         self.calls.append(kwargs)
         content, stop = self.responses.pop(0)
         return SimpleNamespace(content=content, stop_reason=stop)
@@ -698,12 +700,16 @@ SETUP = {"type": "setup", "callSid": "CA7", "from": "+393331112222", "to": "+155
 
 
 def test_relay_twiml_in_arrivo():
-    client, _ = make_relay_client([], relay_tts_provider="ElevenLabs", relay_voice="VOCE_IT")
+    client, _ = make_relay_client(
+        [], relay_tts_provider="ElevenLabs", relay_voice="VOCE_IT",
+        relay_speech_model="flux-general-multi", relay_eot_threshold="0.7",
+    )
     r = post_twilio(client, "/voice/incoming", {"CallSid": "CA1", "From": "+39333"})
     assert "<Gather" not in r.text
     assert 'url="wss://argo.example.com/voice/relay"' in r.text
     assert 'language="it-IT"' in r.text and 'voice="VOCE_IT"' in r.text
     assert 'ttsProvider="ElevenLabs"' in r.text
+    assert 'speechModel="flux-general-multi"' in r.text and 'eotThreshold="0.7"' in r.text
     assert f'action="{PUBLIC_URL}/voice/relay-fine"' in r.text
 
 
@@ -712,7 +718,8 @@ def test_relay_risponde_al_tecnico():
     with client.websocket_connect("/voice/relay", headers=relay_headers()) as ws:
         ws.send_json(SETUP)
         ws.send_json({"type": "prompt", "voicePrompt": "la sirena non suona", "last": True})
-        assert ws.receive_json() == {"type": "text", "token": "Controlla il fusibile F2.", "last": True}
+        assert ws.receive_json() == {"type": "text", "token": "Controlla il fusibile F2.", "last": False}
+        assert ws.receive_json() == {"type": "text", "token": "", "last": True}
     assert claude.calls[0]["messages"][0]["content"] == "la sirena non suona"
     assert "telefono" in claude.calls[0]["system"]
 
@@ -734,6 +741,7 @@ def test_relay_frase_di_attesa_se_lento(monkeypatch):
         ws.send_json({"type": "prompt", "voicePrompt": "batteria", "last": True})
         assert ws.receive_json()["token"] == relay_module.FILLER_TEXT
         assert ws.receive_json()["token"] == "Fatto."
+        assert ws.receive_json()["last"] is True
 
 
 def test_relay_passa_all_operatore():
@@ -795,3 +803,75 @@ def test_voice_mode_non_valido():
 
     with pytest.raises(ValidationError):
         Settings(_env_file=None, voice_mode="boh")
+
+
+class FakeStream:
+    """Simula client.messages.stream dell'SDK Anthropic."""
+
+    def __init__(self, chunks, final):
+        self.text_stream = iter(chunks)
+        self.final = final
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get_final_message(self):
+        return self.final
+
+
+class StreamingClaude(FakeClaude):
+    def stream(self, **kwargs):
+        response = self.create(**kwargs)
+        chunks = [b.text for b in response.content if b.type == "text"]
+        # spezza il testo in due pezzi, come farebbe lo streaming vero
+        pieces = [c for t in chunks for c in (t[: len(t) // 2], t[len(t) // 2 :])]
+        return FakeStream(pieces, response)
+
+
+def test_converse_in_streaming_passa_il_testo_a_pezzi():
+    claude = StreamingClaude([
+        ([text_block("Controllo la scheda."), tool_block("cerca_manuali", {"query": "batteria"})], "tool_use"),
+        ([text_block("La batteria deve superare 12,4 V.")], "end_turn"),
+    ])
+    pieces = []
+    answer = Assistant(claude, "m", kb(), None).converse("s", "batteria", "voce", on_text=pieces.append)
+    assert answer == "La batteria deve superare 12,4 V."
+    assert "".join(pieces) == "Controllo la scheda. La batteria deve superare 12,4 V."
+    assert len(pieces) == 5
+    assert claude.calls[0]["system"]  # il prompt in cache torna testo nel finto client
+
+
+def test_prompt_di_sistema_in_cache():
+    calls = []
+
+    class Spy:
+        def __init__(self):
+            self.messages = self
+
+        def create(self, **kwargs):
+            calls.append(kwargs)
+            return SimpleNamespace(content=[text_block("ok")], stop_reason="end_turn")
+
+    Assistant(Spy(), "m", kb(), None).reply("s", "ciao", "telegram")
+    assert calls[0]["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_relay_streaming_e_operatore_trattiene_il_testo():
+    claude = StreamingClaude([
+        ([tool_block("passa_a_operatore", {"motivo": "urgente"})], "tool_use"),
+        ([text_block("Ti passo un collega.")], "end_turn"),
+    ])
+    assistant = Assistant(claude, "m", kb(), None, OPERATORE)
+    settings = Settings(_env_file=None, twilio_auth_token=TWILIO_TOKEN, public_base_url=PUBLIC_URL,
+                        human_support_number=OPERATORE, voice_mode="relay")
+    client = TestClient(create_app(settings, assistant))
+    with client.websocket_connect("/voice/relay", headers=relay_headers()) as ws:
+        ws.send_json(SETUP)
+        ws.send_json({"type": "prompt", "voicePrompt": "collega", "last": True})
+        end = ws.receive_json()
+    # nessun pezzo detto a voce: la frase la dice /voice/relay-fine prima del trasferimento
+    assert end["type"] == "end"
+    assert json.loads(end["handoffData"]) == {"azione": "operatore", "testo": "Ti passo un collega."}

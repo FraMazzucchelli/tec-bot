@@ -174,6 +174,16 @@ mette più di 1,5 secondi (es. ricerca nei manuali) ARGO dice "Un attimo, contro
    Predefinito `Amazon` + `Bianca-Neural`, la stessa voce di oggi; con `ElevenLabs`
    metti in `RELAY_VOICE` l'ID di una voce italiana della libreria ElevenLabs.
 4. `RELAY_HINTS`: parole che il riconoscimento deve capire bene (nomi dei modelli).
+5. Meno pause dopo che il tecnico smette di parlare: `RELAY_SPEECH_MODEL` (es. un modello
+   Deepgram `flux`) e `RELAY_EOT_THRESHOLD` (0.5–0.9, più basso = risponde prima).
+   Vuoti = valori predefiniti di Twilio.
+
+La risposta di Claude arriva a Twilio **in streaming**: la voce parte con la prima
+frase, anche prima della ricerca nei manuali ("Controllo la scheda…"). Se il tecnico
+parla sopra ARGO, il resto della risposta non viene detto. Il prompt di sistema è in
+**cache** (prompt caching di Anthropic), così ogni turno parte più velocemente.
+Per tempi di risposta ancora più brevi si può provare un modello più veloce con
+`CLAUDE_MODEL` (es. `claude-haiku-5-5`).
 
 Flusso: `/voice/incoming` risponde con `<Connect><ConversationRelay url="wss://…/voice/relay">`;
 il websocket `/voice/relay` (firma `X-Twilio-Signature` verificata) riceve le frasi del

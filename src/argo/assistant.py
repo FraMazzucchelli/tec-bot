@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from .knowledge import KnowledgeBase
@@ -257,24 +258,46 @@ class Assistant:
             return True
         return False
 
+    def handoff_pending(self, session_id: str) -> bool:
+        """Come take_handoff, ma senza consumare la richiesta."""
+        return session_id in self._handoffs
+
     def reply(self, session_id: str, text: str, channel: str, phone: str = "") -> str:
+        return self.converse(session_id, text, channel, phone)
+
+    def converse(
+        self,
+        session_id: str,
+        text: str,
+        channel: str,
+        phone: str = "",
+        on_text: Callable[[str], None] | None = None,
+    ) -> str:
+        """Un turno di conversazione. Restituisce la risposta finale.
+
+        Con `on_text` (canale voce in streaming) il testo di Claude viene passato a
+        pezzi mentre viene generato, comprese eventuali frasi prima di una ricerca
+        nei manuali ("Controllo la scheda…"), così la voce parte subito.
+        """
         self.purge_expired()
         self._last_seen[session_id] = time.time()
         if phone:
             self._phones[session_id] = phone
         messages = self._history.setdefault(session_id, [])
         messages.append({"role": "user", "content": text})
-        system = self._system(channel)
+        # prompt di sistema in cache: è lungo e uguale a ogni turno, Claude risponde prima
+        system = [{"type": "text", "text": self._system(channel), "cache_control": {"type": "ephemeral"}}]
         tools = self._tools(channel)
 
         for _ in range(MAX_TOOL_ROUNDS):
-            response = self.client.messages.create(
+            request = dict(
                 model=self.model,
                 max_tokens=1024,
                 system=system,
                 messages=messages,
                 **({"tools": tools} if tools else {}),
             )
+            response = self._call(request, on_text)
             messages.append({"role": "assistant", "content": response.content})
 
             if response.stop_reason != "tool_use":
@@ -292,9 +315,27 @@ class Assistant:
                 if block.type == "tool_use"
             ]
             messages.append({"role": "user", "content": results})
+            if on_text is not None:
+                on_text(" ")  # separa la frase prima della ricerca da quella dopo
 
         self._trim(session_id)
         return "Non riesco a completare la richiesta. Vuoi che apra un ticket per un collega?"
+
+    def _call(self, request: dict[str, Any], on_text: Callable[[str], None] | None) -> Any:
+        """Chiamata a Claude; in streaming se c'è `on_text` e il client lo supporta."""
+        stream = getattr(self.client.messages, "stream", None)
+        if on_text is None or stream is None:
+            response = self.client.messages.create(**request)
+            if on_text is not None:
+                for block in response.content:
+                    if block.type == "text" and block.text:
+                        on_text(block.text)
+            return response
+        with stream(**request) as events:
+            for chunk in events.text_stream:
+                if chunk:
+                    on_text(chunk)
+            return events.get_final_message()
 
     def _system(self, channel: str) -> str:
         return SYSTEM_PROMPT.format(name=self.name) + "\n" + CHANNEL_STYLE.get(

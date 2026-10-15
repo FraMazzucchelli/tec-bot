@@ -41,6 +41,10 @@ class Settings(BaseSettings):
     relay_tts_provider: str = "Amazon"  # Amazon, Google oppure ElevenLabs
     relay_voice: str = "Bianca-Neural"  # con ElevenLabs: l'ID di una voce italiana
     relay_transcription_provider: str = "Deepgram"  # Deepgram oppure Google
+    # Fine frase: vuoti = valori di Twilio. Con Deepgram e un modello "flux" si può
+    # abbassare RELAY_EOT_THRESHOLD (0.5-0.9) per risposte più pronte.
+    relay_speech_model: str = ""
+    relay_eot_threshold: str = ""
     # parole che il riconoscimento vocale deve capire bene (modelli, prodotti)
     relay_hints: str = "nebbiogeno,DT-400,DT-800,DT-1600,EX-50,EX-100,EX-200,centrale,sensore"
 
