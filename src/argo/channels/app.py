@@ -23,6 +23,7 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import secrets
 import time
 from pathlib import Path
@@ -81,18 +82,20 @@ def access_token(
 
 
 APP_PHONE_TTL_SECONDS = 2 * 3600
+INTERNATIONAL_NUMBER = re.compile(r"^\+[1-9]\d{7,14}$")
 
 
 def remember_phone(state, call_sid: str, raw: str, settings) -> None:
     """Chiamata dall'app con il cellulare indicato dal tecnico: lo teniamo in memoria
     per la durata della chiamata, così ARGO può mandargli le schede su WhatsApp.
-    Solo cellulari italiani (o numeri in CALLBACK_NUMBERS), come per "Fatti chiamare"."""
-    from .callback import ITALIAN_MOBILE, _extra_numbers, normalize_number
+    Qualsiasi numero in formato internazionale valido: i messaggi WhatsApp non
+    costano come le chiamate, quindi non serve la restrizione di "Fatti chiamare"."""
+    from .callback import normalize_number
 
     if not call_sid or not raw.strip():
         return
     number = normalize_number(raw)
-    if not (ITALIAN_MOBILE.match(number) or number in _extra_numbers(settings)):
+    if not INTERNATIONAL_NUMBER.match(number):
         log.warning("App: cellulare non valido, ignorato")
         return
     phones = getattr(state, "app_phones", None)

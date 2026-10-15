@@ -57,8 +57,6 @@ class Settings(BaseSettings):
     privacy_policy_url: str = ""  # link all'informativa privacy completa del titolare
     callback_enabled: bool = True  # false = modulo "Fatti chiamare" disattivato
     callback_password: str = ""  # vuota = nessun codice di accesso richiesto
-    # numeri extra ammessi oltre ai cellulari italiani (es. esteri), separati da virgola
-    callback_numbers: str = ""
     # Limiti delle chiamate di prova: 0 = nessun limite (fase di test).
     # Prima di condividere il codice di accesso: es. 20 l'ora e 180 secondi.
     callback_max_per_hour: int = 0

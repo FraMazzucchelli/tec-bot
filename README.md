@@ -122,7 +122,7 @@ telefonico blocca le chiamate verso gli USA. Il vecchio indirizzo `/chiamami` po
 
 Variabili: `TWILIO_VOICE_FROM` (il numero Twilio, es. `+16812562315`) e `CALLBACK_PASSWORD`
 (codice di accesso; se vuota il modulo è aperto a tutti, `CALLBACK_ENABLED=false` lo disattiva). Protezioni:
-- solo cellulari italiani (`+39 3…`); altri numeri vanno elencati in `CALLBACK_NUMBERS`, separati da virgola;
+- solo cellulari italiani (`+39 3…`);
 - una chiamata ogni `CALLBACK_COOLDOWN_SECONDS` secondi per numero e al massimo `CALLBACK_MAX_PER_HOUR` in totale. Di default sono a `0` = nessun limite (fase di test): prima di condividere il codice di accesso impostali, ad esempio 180 e 20;
 - ogni chiamata si chiude dopo 5 minuti.
 
@@ -211,8 +211,9 @@ Se è impostato `CALLBACK_PASSWORD`, l'app chiede lo stesso codice (lo ricorda s
 telefono). `APP_MAX_CALLS_PER_HOUR` limita le chiamate dall'app (predefinito 30, `0` = nessun limite).
 Il tecnico può indicare nell'app il proprio cellulare (facoltativo, resta salvato solo sul
 suo telefono): arriva a Twilio come parametro `Telefono` della chiamata e ARGO lo usa,
-solo per quella chiamata, per mandare le schede su WhatsApp. Sono accettati i cellulari
-italiani e i numeri in `CALLBACK_NUMBERS`; senza numero ARGO dice che non può inviare.
+solo per quella chiamata, per mandare le schede su WhatsApp. Va bene qualsiasi numero:
+senza prefisso si intende italiano (`333 123 4567`), gli esteri con il prefisso (`+44 …`).
+Senza numero ARGO dice che non può inviare.
 
 ## Chat sul sito
 

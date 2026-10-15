@@ -439,11 +439,11 @@ def test_chiamami_limiti(monkeypatch):
     assert len(chiamate) == 2
 
 
-def test_chiamami_numero_extra_autorizzato(monkeypatch):
+def test_chiamami_rifiuta_numeri_esteri(monkeypatch):
     chiamate = fake_twilio(monkeypatch)
-    client = make_callback_client(callback_numbers="+44 7700 900123")
-    assert esito(client, {"numero": "+447700900123", "codice": "segreta"}) == "chiamata"
-    assert chiamate[0][1]["To"] == "+447700900123"
+    client = make_callback_client()
+    assert esito(client, {"numero": "+447700900123", "codice": "segreta"}) == "numero"
+    assert chiamate == []
 
 
 def test_chiamami_senza_codice(monkeypatch):
@@ -981,7 +981,9 @@ def test_app_cellulare_non_valido_ignorato():
 
     state = SimpleNamespace()
     settings = Settings(_env_file=None)
-    remember_phone(state, "CA1", "+15551234567", settings)  # non italiano
+    remember_phone(state, "CA1", "12", settings)  # troppo corto
     assert phone_for_call(state, "CA1", "client:x") == "client:x"
+    remember_phone(state, "CA3", "+44 7700 900123", settings)  # estero: va bene
+    assert phone_for_call(state, "CA3", "client:x") == "+447700900123"
     remember_phone(state, "CA2", "0039 333 1234567", settings)
     assert phone_for_call(state, "CA2", "client:x") == "+393331234567"

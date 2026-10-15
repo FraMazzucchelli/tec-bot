@@ -6,7 +6,7 @@ Per il tecnico è una chiamata in arrivo, quindi gratuita.
 
 Protezioni contro abusi e spese impreviste:
 - codice di accesso obbligatorio (CALLBACK_PASSWORD);
-- solo cellulari italiani (+39 3...), più eventuali numeri in CALLBACK_NUMBERS;
+- solo cellulari italiani (+39 3...): niente numeri esteri o a tariffa speciale;
 - al massimo una chiamata ogni CALLBACK_COOLDOWN_SECONDS (predefinito 180) per numero
   e CALLBACK_MAX_PER_HOUR in totale;
 - ogni chiamata si chiude dopo 5 minuti (TimeLimit di Twilio).
@@ -43,10 +43,6 @@ def normalize_number(raw: str) -> str:
     if not digits.startswith("+"):
         digits = "+39" + digits
     return digits
-
-
-def _extra_numbers(settings) -> set[str]:
-    return {normalize_number(n) for n in settings.callback_numbers.split(",") if n.strip()}
 
 
 CODE_FIELD = """<div class="field">
@@ -163,7 +159,7 @@ def callback_call(request: Request, numero: str = Form(""), codice: str = Form("
         return _outcome("codice")
 
     number = normalize_number(numero)
-    if not (ITALIAN_MOBILE.match(number) or number in _extra_numbers(s)):
+    if not ITALIAN_MOBILE.match(number):
         return _outcome("numero")
 
     limiter = _limiter(request)
